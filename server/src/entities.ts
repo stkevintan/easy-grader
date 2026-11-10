@@ -9,6 +9,7 @@ import {
 import type { AdapterConfig } from './adapters/adapter-config';
 
 export type Role = 'user' | 'admin';
+export type UnitRole = 'owner' | 'manager' | 'grader' | 'viewer';
 
 @Entity('users')
 export class User {
@@ -22,6 +23,29 @@ export class User {
   @Column({ type: 'integer', default: 0 }) tokenVersion!: number;
   @CreateDateColumn() createdAt!: Date;
   @Column({ type: 'datetime', nullable: true }) lastLoginAt!: Date | null;
+}
+
+/** 组织/管理单元；数据默认按 unitId 隔离 */
+@Entity('management_units')
+@Index(['name'], { unique: true })
+export class ManagementUnit {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column({ type: 'varchar', length: 100 }) name!: string;
+  @Column({ type: 'varchar', default: '' }) description!: string;
+  @Column({ type: 'integer' }) ownerId!: number;
+  @Column({ type: 'boolean', default: true }) enabled!: boolean;
+  @CreateDateColumn() createdAt!: Date;
+  @UpdateDateColumn() updatedAt!: Date;
+}
+
+@Entity('unit_memberships')
+@Index(['unitId', 'userId'], { unique: true })
+export class UnitMembership {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column({ type: 'integer' }) unitId!: number;
+  @Column({ type: 'integer' }) userId!: number;
+  @Column({ type: 'varchar', default: 'grader' }) role!: UnitRole;
+  @CreateDateColumn() createdAt!: Date;
 }
 
 export type LedgerReason = 'register' | 'redeem' | 'judge' | 'refund' | 'admin';
@@ -138,4 +162,6 @@ export const ENTITIES = [
   GradingTask,
   JudgeRecord,
   AdapterPreset,
+  ManagementUnit,
+  UnitMembership,
 ];

@@ -12,7 +12,7 @@ import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import type { Request } from 'express';
 import { Repository } from 'typeorm';
-import { User } from '../entities';
+import { ManagementUnit, UnitMembership, UnitRole, User } from '../entities';
 
 export interface AuthUser {
   id: number;
@@ -27,6 +27,9 @@ export interface JwtPayload {
 
 const PUBLIC_KEY = 'isPublic';
 const ADMIN_KEY = 'isAdmin';
+const UNIT_KEY = 'unitAccess';
+
+export const UnitAccess = (roles: UnitRole[] = ['viewer', 'grader', 'manager', 'owner']) => SetMetadata(UNIT_KEY, roles);
 
 /** 不需要登录的接口 */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);
@@ -71,6 +74,15 @@ export class AuthGuard implements CanActivate {
     req.user = { id: user.id, username: user.username, role: user.role };
     if (this.reflector.getAllAndOverride<boolean>(ADMIN_KEY, targets) && user.role !== 'admin') {
       throw new ForbiddenException('需要管理员权限');
+    }
+    const unitRoles = this.reflector.getAllAndOverride<UnitRole[]>(UNIT_KEY, targets);
+    if (unitRoles) {
+      const unitId = Number(req.headers['x-unit-id'] || req.query.unitId || req.body?.unitId || (req.params as { unitId?: string }).unitId || req.params.id);
+      if (!Number.isInteger(unitId) || unitId <= 0) throw new ForbiddenException('请指定管理单元');
+      const membership = await this.users.manager.getRepository(UnitMembership).findOneBy({ unitId, userId: user.id });
+      const unit = await this.users.manager.getRepository(ManagementUnit).findOneBy({ id: unitId, enabled: true });
+      if (!unit || !membership || !unitRoles.includes(membership.role)) throw new ForbiddenException('无权访问该管理单元');
+      (req as Request & { unit?: { id: number; role: UnitRole } }).unit = { id: unitId, role: membership.role };
     }
     return true;
   }
