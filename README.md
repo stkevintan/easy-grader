@@ -64,7 +64,10 @@ cd extension/dist && zip -qr ../release/easy-grader-0.1.0.zip .
 `extension/store/` 里是商店需要的图片：
 
 - `icon-128.png`：128×128 商店图标
+- `icon-300.png`：300×300 Edge 商店图标
 - `01-result.png`、`02-settings.png`、`03-submitted.png`：1280×800 截图（商店要求 1280×800 或 640×400，至少 1 张、最多 5 张）
+- `small-promotional-tile.png`：440×280 Small promotional tile
+- `large-promotional-tile.png`：1400×560 Large promotional tile
 
 截图是真实扩展 UI + 本地演示阅卷页 + 本地假模型生成的，不含学生数据，也不会调用外部模型。改了面板 UI 后重新生成：
 
@@ -219,6 +222,23 @@ pnpm test:e2e                  # 先构建，再用真实 Chromium 跑：注册 
 ```
 
 `e2e` 会在 3000 端口启动服务端，跑之前请先停掉 `pnpm dev`。
+
+## GitHub Actions 发布
+
+`.github/workflows/ci.yml` 会在每个 Pull Request 上安装依赖、运行服务端/扩展测试并构建服务端和扩展。
+
+`.github/workflows/release.yml` 会在 GitHub Release 发布后：
+
+- 检查 release tag 对应代码的测试和构建；
+- 构建并推送 `stkevintan/easy-grader-server:<tag>` 的 `linux/amd64` Docker 镜像；正式 release 另外更新 `latest`，预发布 release 不更新 `latest`；
+- 构建生产版扩展，并将相同内容分别打包为 Chrome / Edge zip，上传到该 GitHub Release。
+
+在仓库 Settings → Secrets and variables → Actions 中设置：
+
+- `DOCKERHUB_USERNAME`：Docker Hub 用户名；
+- `DOCKERHUB_TOKEN`：Docker Hub Access Token（不要使用密码）。
+
+创建 GitHub Release 时，tag 应与 `server/package.json` 和 `extension/manifest.json` 的版本一致，例如 `0.1.1`；如果使用 `v0.1.1`，Docker 镜像标签也会是 `v0.1.1`。
 
 ## Docker 部署
 

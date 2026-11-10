@@ -42,6 +42,8 @@ pnpm --filter easy-grader-e2e run edge-store-icon
 - **隐私政策 URL**：部署服务端后的 `https://你的域名/privacy/`
 - **截图**：上传 `extension/store/01-result.png`、`02-settings.png`、`03-submitted.png`
 - **图标**：上传 `extension/store/icon-300.png`
+- **Small promotional tile**：上传 `extension/store/small-promotional-tile.png`（440×280）
+- **Large promotional tile**：上传 `extension/store/large-promotional-tile.png`（1400×560）
 - **权限说明**：按 `extension/store/permission-justifications.md` 填写
 - **远程代码**：选择不使用远程代码
 

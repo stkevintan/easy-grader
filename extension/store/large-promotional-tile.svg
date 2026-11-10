@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="560" viewBox="0 0 1400 560">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0b245c"/><stop offset=".55" stop-color="#1d4ed8"/><stop offset="1" stop-color="#2563eb"/></linearGradient>
+    <radialGradient id="orb" cx="50%" cy="50%"><stop stop-color="#60a5fa" stop-opacity=".55"/><stop offset="1" stop-color="#60a5fa" stop-opacity="0"/></radialGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="150%" height="170%"><feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#061844" flood-opacity=".4"/></filter>
+  </defs>
+  <rect width="1400" height="560" fill="url(#bg)"/>
+  <circle cx="1080" cy="130" r="330" fill="url(#orb)"/>
+  <circle cx="1310" cy="530" r="180" fill="#22c55e" opacity=".12"/>
+  <path d="M0 465C270 390 390 565 690 485S1115 390 1400 475V560H0Z" fill="#071b4b" opacity=".22"/>
+  <g transform="translate(90 84)">
+    <rect width="76" height="76" rx="21" fill="#fff"/>
+    <rect x="21" y="16" width="39" height="50" rx="6" fill="#2563eb"/>
+    <path d="M30 30h20M30 40h16M30 50h19" stroke="#bfdbfe" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="57" cy="58" r="19" fill="#22c55e" stroke="#fff" stroke-width="5"/>
+    <path d="m49 58 6 6 11-13" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <text x="190" y="137" fill="#fff" font-family="Arial, sans-serif" font-size="43" font-weight="700">Easy Grader</text>
+  <text x="92" y="245" fill="#fff" font-family="Arial, sans-serif" font-size="48" font-weight="700">AI-assisted grading.</text>
+  <text x="92" y="302" fill="#dbeafe" font-family="Arial, sans-serif" font-size="30">Clear reasons. Teacher-confirmed scores.</text>
+  <g filter="url(#shadow)">
+    <rect x="824" y="72" width="470" height="382" rx="22" fill="#fff"/>
+    <rect x="854" y="107" width="278" height="14" rx="7" fill="#cbd5e1"/>
+    <rect x="854" y="139" width="335" height="11" rx="5.5" fill="#e2e8f0"/>
+    <rect x="854" y="165" width="246" height="11" rx="5.5" fill="#e2e8f0"/>
+    <rect x="854" y="214" width="260" height="12" rx="6" fill="#dbeafe"/>
+    <rect x="854" y="246" width="318" height="12" rx="6" fill="#dbeafe"/>
+    <rect x="854" y="278" width="286" height="12" rx="6" fill="#dbeafe"/>
+    <rect x="854" y="335" width="125" height="70" rx="13" fill="#eff6ff"/>
+    <text x="876" y="358" fill="#64748b" font-family="Arial, sans-serif" font-size="13">SCORE</text>
+    <text x="876" y="390" fill="#1d4ed8" font-family="Arial, sans-serif" font-size="31" font-weight="700">5 / 6</text>
+    <rect x="1001" y="335" width="145" height="70" rx="13" fill="#f0fdf4"/>
+    <text x="1022" y="358" fill="#64748b" font-family="Arial, sans-serif" font-size="13">CONFIDENCE</text>
+    <text x="1022" y="390" fill="#16a34a" font-family="Arial, sans-serif" font-size="31" font-weight="700">86%</text>
+    <rect x="1168" y="335" width="96" height="70" rx="13" fill="#2563eb"/>
+    <path d="M1193 370h45M1193 383h31" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>
