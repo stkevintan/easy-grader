@@ -110,8 +110,12 @@ async function auth(cmd: 'auth.login' | 'auth.register') {
   const password = $<HTMLInputElement>('password').value;
   if (!username || password.length < 8) return say('login-msg', 'error', '请输入用户名和至少 8 位密码');
   try {
-    await bg({ cmd, username, password });
+    const inviteToken = $<HTMLInputElement>('invite-token').value.trim();
+    if (cmd === 'auth.register' && !inviteToken) return say('login-msg', 'error', '请输入单元邀请令牌');
+    if (cmd === 'auth.register') await bg({ cmd, username, password, inviteToken });
+    else await bg({ cmd, username, password });
     $<HTMLInputElement>('password').value = '';
+    $<HTMLInputElement>('invite-token').value = '';
     say('login-msg', 'ok', '');
     await renderAccount();
   } catch (e) {

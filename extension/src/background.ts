@@ -163,7 +163,11 @@ async function handle(req: BgRequest, sender: Sender): Promise<unknown> {
     case 'auth.login':
     case 'auth.register': {
       const path = req.cmd === 'auth.login' ? '/api/auth/login' : '/api/auth/register';
-      const r = await api<{ token: string; user: PublicUser }>('POST', path, { username: req.username, password: req.password });
+      const r = await api<{ token: string; user: PublicUser }>('POST', path, {
+        username: req.username,
+        password: req.password,
+        ...(req.cmd === 'auth.register' ? { inviteToken: req.inviteToken } : {}),
+      });
       await store.set({ token: r.token, user: r.user });
       return { user: r.user };
     }

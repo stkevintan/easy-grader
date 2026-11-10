@@ -7,6 +7,7 @@ import type { AdapterConfig } from '../adapters/adapter-config';
 import { AdaptersService } from '../adapters/adapters.service';
 import { toPublicUser } from '../auth/auth.service';
 import { BillingService } from '../billing/billing.service';
+import { InviteService } from '../invite.service';
 import { AdminOnly, AuthUser, CurrentUser } from '../common/auth.guard';
 import { hashPassword } from '../common/password';
 import { CreditLedger, GradingTask, JudgeRecord, RedeemCode, User } from '../entities';
@@ -48,6 +49,18 @@ class UpdateCodeDto {
   @IsBoolean() disabled!: boolean;
 }
 
+class CreateInvitesDto {
+  @Type(() => Number) @IsInt() @Min(1) @Max(500) count!: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100_000) maxUses?: number;
+  @Type(() => Number) @IsInt() @Min(1) unitId!: number;
+  @IsOptional() @IsDateString() expiresAt?: string;
+  @IsOptional() @IsString() @MaxLength(200) note?: string;
+}
+
+class UpdateInviteDto {
+  @IsBoolean() disabled!: boolean;
+}
+
 class PresetDto {
   @IsString() @MaxLength(100) name!: string;
   @IsString() @MaxLength(255) hostPattern!: string;
@@ -86,6 +99,7 @@ export class AdminController {
     @InjectRepository(JudgeRecord) private readonly records: Repository<JudgeRecord>,
     private readonly billing: BillingService,
     private readonly adapters: AdaptersService,
+    private readonly invites: InviteService,
   ) {}
 
   @Get('stats')
@@ -239,6 +253,23 @@ export class AdminController {
       createdBy: me.id,
     });
     return { codes };
+  }
+
+  @Get('invites')
+  listInvites(@Query('q') q?: string) {
+    return this.invites.list(q);
+  }
+
+  @Post('invites')
+  async createInvites(@CurrentUser() me: AuthUser, @Body() dto: CreateInvitesDto) {
+    const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
+    if (expiresAt && expiresAt < new Date()) throw new BadRequestException('过期时间必须在未来');
+    return { tokens: await this.invites.create(dto.unitId, me.id, dto.count, dto.maxUses ?? 1, expiresAt, dto.note ?? '') };
+  }
+
+  @Patch('invites/:id')
+  updateInvite(@Param('id', ParseIntPipe) id: number, @Body() dto: UpdateInviteDto) {
+    return this.invites.disable(id, dto.disabled);
   }
 
   @Patch('codes/:id')

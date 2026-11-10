@@ -450,6 +450,45 @@ function codesPage() {
   });
 }
 
+// ---------- 单元邀请令牌 ----------
+
+function invitesPage() {
+  return listPage({
+    title: '单元邀请令牌',
+    searchPlaceholder: '搜索备注',
+    load: ({ q }) => api('GET', `/api/admin/invites?${qs({ q })}`),
+    toolbar: [
+      (refresh) => h('button', { class: 'primary', onclick: async () => {
+        const units = await api('GET', '/api/admin/units');
+        openDialog({
+          title: '生成单元邀请令牌',
+          fields: [
+            { name: 'unitId', label: '管理单元', type: 'select', options: units.map((u) => [String(u.id), u.name]) },
+            { name: 'count', label: '生成数量', type: 'number', min: 1, max: 500, value: 10, required: true },
+            { name: 'maxUses', label: '每个令牌可注册人数', type: 'number', min: 1, value: 1 },
+            { name: 'expiresAt', label: '过期日期（可选）', type: 'date' },
+            { name: 'note', label: '备注', maxlength: 200 },
+          ],
+          submitText: '生成',
+          onSubmit: async (v) => {
+            const r = await api('POST', '/api/admin/invites', { unitId: Number(v.unitId), count: Number(v.count), maxUses: Number(v.maxUses) || 1, expiresAt: v.expiresAt ? new Date(`${v.expiresAt}T23:59:59`).toISOString() : undefined, note: v.note || undefined });
+            refresh();
+            openDialog({ title: `已生成 ${r.tokens.length} 个邀请令牌`, fields: [{ name: 'tokens', label: '复制后分发', type: 'textarea', value: r.tokens.join('\n'), readonly: true }], extra: h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(r.tokens.join('\n')).then(() => toast('已复制')) }, '复制全部') });
+          },
+        });
+      } }, '生成邀请令牌'),
+    ],
+    cols: [
+      { title: '单元', render: (x) => x.unitId },
+      { title: '已用/上限', render: (x) => `${x.usedCount} / ${x.maxUses}` },
+      { title: '状态', render: (x) => x.disabled ? tag('已停用', 'bad') : x.usedCount >= x.maxUses ? tag('已用完') : tag('可用', 'ok') },
+      { title: '过期时间', render: (x) => fmtTime(x.expiresAt) },
+      { title: '备注', render: (x) => x.note || '—', wrap: true },
+      { title: '操作', render: (x) => linkBtn(x.disabled ? '启用' : '停用', async () => { await api('PATCH', `/api/admin/invites/${x.id}`, { disabled: !x.disabled }); route(); }, x.disabled ? '' : 'danger') },
+    ],
+  });
+}
+
 // ---------- 评分记录 ----------
 
 function recordsPage(params) {
@@ -674,7 +713,7 @@ function unitsPage() {
 
 // ---------- 路由 ----------
 
-const ROUTES = { dashboard: dashboardPage, users: usersPage, codes: codesPage, records: recordsPage, presets: presetsPage, units: unitsPage, ledger: ledgerPage };
+const ROUTES = { dashboard: dashboardPage, users: usersPage, codes: codesPage, invites: invitesPage, records: recordsPage, presets: presetsPage, units: unitsPage, ledger: ledgerPage };
 
 function route() {
   if (!me) return;
