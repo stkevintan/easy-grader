@@ -29,8 +29,8 @@ export function configureApp(app: INestApplication, cfg: AppConfig) {
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, stopAtFirstError: true }),
   );
 
-  // 管理后台（admin/，无构建步骤）、本地演示阅卷页和隐私政策页。
-  // 默认在仓库根目录找（server/dist 往上两级）；Docker 镜像里通过 ADMIN_DIR / DEMO_DIR / PRIVACY_DIR 指定
+  // 管理后台（admin/，无构建步骤）与本地演示阅卷页。
+  // 默认在仓库根目录找（server/dist 往上两级）；Docker 镜像里通过 ADMIN_DIR / DEMO_DIR 指定
   const root = resolve(__dirname, '..', '..');
   const express = ex.getHttpAdapter().getInstance() as Express;
   const admin = cfg.adminDir || join(root, 'admin');
@@ -40,12 +40,6 @@ export function configureApp(app: INestApplication, cfg: AppConfig) {
   }
   const demo = cfg.demoDir || join(root, 'demo');
   if (cfg.serveDemo && existsSync(demo)) ex.useStaticAssets(demo, { prefix: '/demo/', index: 'index.html' });
-  // Chrome 应用商店要求可公开访问的隐私政策；模板在仓库的 privacy/ 目录
-  const privacy = cfg.privacyDir || join(root, 'privacy');
-  if (existsSync(join(privacy, 'index.html'))) {
-    ex.useStaticAssets(privacy, { prefix: '/privacy/', index: 'index.html' });
-    express.get('/privacy', (_req, res) => res.redirect('/privacy/'));
-  }
 }
 
 async function bootstrap() {

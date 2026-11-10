@@ -58,12 +58,6 @@ describe('Easy Grader server (e2e)', () => {
     expect(r.body.version).toBe(require('../package.json').version);
   });
 
-  it('隐私政策页面公开可访问', async () => {
-    const r = await http.get('/privacy/').expect(200);
-    expect(r.headers['content-type']).toMatch(/text\/html/);
-    expect(r.text).toContain('隐私政策');
-    await http.get('/privacy').expect(302).expect('location', '/privacy/');
-  });
 
   it('未登录访问受保护接口返回 401', async () => {
     await http.get('/api/auth/me').expect(401);

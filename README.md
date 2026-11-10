@@ -85,7 +85,7 @@ manifest 已声明 16/32/48/128 四个尺寸的图标，构建时从 `extension/
 
 管理后台在 http://127.0.0.1:3000/admin/ ，用 `.env` 里的管理员账号登录。没设 `ADMIN_PASSWORD` 的话，首次启动会在日志里打印一个随机密码。
 
-隐私政策模板在 `privacy/`，服务端会自动把它挂在 `/privacy/`（`/privacy` 会 301 到 `/privacy/`）。把 `privacy/index.html` 里的占位内容替换后，把 `https://你的域名/privacy/` 填到 Chrome 应用商店的隐私政策 URL 即可；Docker 镜像已经把该目录复制到 `/app/privacy`。
+隐私政策文档在 `privacy/privacy-policy.md`，请将它发布到任意公开、无需登录的 HTTPS 静态托管地址，再把该 URL 填到 Chrome/Edge 应用商店的隐私政策字段。隐私政策不由 Easy Grader 服务端托管，也不会进入 Docker 镜像。
 
 ## 接入模型
 

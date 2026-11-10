@@ -47,10 +47,9 @@ export interface AppConfig {
   };
   corsOrigins: string[];
   seedDemoPreset: boolean;
-  /** 管理后台 / 演示页 / 隐私政策静态文件目录；为空则在仓库根目录查找 */
+  /** 管理后台 / 演示页静态文件目录；为空则在仓库根目录查找 */
   adminDir: string;
   demoDir: string;
-  privacyDir: string;
   /** 是否提供 /demo/ 演示阅卷页 */
   serveDemo: boolean;
   rateLimit: { default: number; auth: number; judge: number };
@@ -133,7 +132,6 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     seedDemoPreset: bool(env.SEED_DEMO_PRESET, true),
     adminDir: env.ADMIN_DIR ? resolve(env.ADMIN_DIR) : '',
     demoDir: env.DEMO_DIR ? resolve(env.DEMO_DIR) : '',
-    privacyDir: env.PRIVACY_DIR ? resolve(env.PRIVACY_DIR) : '',
     serveDemo: bool(env.SERVE_DEMO, true),
     rateLimit: {
       default: num(env.RATE_LIMIT_DEFAULT, 120),

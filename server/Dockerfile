@@ -39,7 +39,6 @@ ENV NODE_ENV=production \
     DB_PATH=/data/app.db \
     ADMIN_DIR=/app/admin \
     DEMO_DIR=/app/demo \
-    PRIVACY_DIR=/app/privacy \
     SERVE_DEMO=false \
     SEED_DEMO_PRESET=false
 WORKDIR /app
@@ -47,7 +46,6 @@ WORKDIR /app
 COPY --from=build --chown=node:node /out/ ./
 COPY --chown=node:node admin/ ./admin/
 COPY --chown=node:node demo/ ./demo/
-COPY --chown=node:node privacy/ ./privacy/
 
 # SQLite 数据库和自动生成的 JWT 密钥都放在 /data，挂卷持久化
 RUN mkdir -p /data && chown node:node /data
