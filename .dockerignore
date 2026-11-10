@@ -1,0 +1,21 @@
+# 构建上下文是仓库根目录，只需要 workspace 清单、server/、admin/、demo/
+**/node_modules
+**/dist
+**/dist-dev
+**/.DS_Store
+.git
+research
+docs
+e2e/*
+!e2e/package.json
+extension/*
+!extension/package.json
+tools/*
+!tools/package.json
+
+# 本地数据与密钥绝不能进镜像
+server/data
+server/.env
+**/*.db
+**/*.db-*
+**/.jwt-secret

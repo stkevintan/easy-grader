@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>模拟阅卷平台 · 输入框给分</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #eef1f5; color: #1f2937; }
+  header { display: flex; gap: 24px; align-items: center; padding: 10px 20px; background: #1e3a8a; color: #fff; }
+  header b { font-size: 16px; }
+  main { display: grid; grid-template-columns: 1fr 280px; gap: 16px; padding: 16px 20px; }
+  .paper { background: #fff; border-radius: 8px; padding: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  canvas { width: 100%; height: auto; display: block; border: 1px solid #e5e7eb; }
+  aside { background: #fff; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); align-self: start; }
+  label { display: block; margin: 8px 0 4px; color: #4b5563; }
+  input[type=number] { width: 100%; box-sizing: border-box; font-size: 20px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+  button { margin-top: 12px; width: 100%; padding: 10px; font-size: 15px; border: 0; border-radius: 6px; background: #2563eb; color: #fff; cursor: pointer; }
+  button:disabled { background: #94a3b8; }
+  .log { margin-top: 16px; max-height: 260px; overflow: auto; font-size: 12px; color: #374151; border-top: 1px solid #e5e7eb; padding-top: 8px; }
+  .hint { font-size: 12px; color: #6b7280; margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <b>模拟阅卷平台</b>
+  <span>考试：<span id="exam-title">2026 秋季期中考试 高二语文</span></span>
+  <span>题号：<span id="question-no">17</span></span>
+  <span id="max-score">满分 6 分</span>
+  <span>进度：<span id="progress">1</span> / <span id="total">5</span></span>
+</header>
+<main>
+  <div class="paper"><canvas id="answer-canvas" width="900" height="420" aria-label="学生答卷"></canvas></div>
+  <aside>
+    <label for="score-input">给分（0-6）</label>
+    <input id="score-input" type="number" min="0" max="6" step="1" autocomplete="off" />
+    <button id="submit-btn" type="button">提交并下一份</button>
+    <p class="hint">本页用于本地联调 Easy Grader 扩展：答卷画在 canvas 上，点提交后切换到下一份。</p>
+    <div class="log" id="log" aria-live="polite"></div>
+  </aside>
+</main>
+<script src="papers.js"></script>
+<script>
+  const canvas = document.getElementById('answer-canvas');
+  const input = document.getElementById('score-input');
+  const btn = document.getElementById('submit-btn');
+  const log = document.getElementById('log');
+  let i = 0;
+  document.getElementById('total').textContent = PAPERS.length;
+
+  function render() {
+    drawPaper(canvas, PAPERS[i], i);
+    document.getElementById('progress').textContent = i + 1;
+    input.value = '';
+  }
+
+  btn.addEventListener('click', () => {
+    const v = input.value.trim();
+    if (v === '' || Number(v) < 0 || Number(v) > 6) { alert('请输入 0-6 之间的分数'); return; }
+    const line = document.createElement('div');
+    line.textContent = `第 ${i + 1} 份：${v} 分（${new Date().toLocaleTimeString()}）`;
+    log.prepend(line);
+    btn.disabled = true;
+    // 模拟服务器延迟后加载下一份
+    setTimeout(() => {
+      btn.disabled = false;
+      if (i + 1 >= PAPERS.length) { canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height); alert('本题已全部阅完'); return; }
+      i += 1;
+      render();
+    }, 600);
+  });
+
+  render();
+</script>
+</body>
+</html>

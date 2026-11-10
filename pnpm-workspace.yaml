@@ -1,0 +1,13 @@
+packages:
+  - server
+  - extension
+  - e2e
+  - tools
+
+# pnpm 默认不执行依赖的安装脚本，这里只放行确实需要编译/下载二进制的包
+allowBuilds:
+  better-sqlite3: true # 原生 SQLite 绑定
+  esbuild: true # 平台二进制
+  # jest 的间接依赖，自带预编译二进制，安装脚本只是可选兜底，不需要执行
+  '@parcel/watcher': false
+  unrs-resolver: false

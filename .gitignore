@@ -1,0 +1,36 @@
+node_modules/
+*.map
+.DS_Store
+
+# 本地构建、发布和调试产物
+server/dist/
+extension/dist/
+extension/dist-dev/
+extension/release/
+extension/store/*.zip
+e2e/.cache/
+*.log
+*.tmp
+*.bak
+__pycache__/
+*.pyc
+
+# 服务端数据与密钥
+server/data/
+server/.env
+*.db
+*.db-wal
+*.db-shm
+.jwt-secret
+
+# 逆向研究资料（第三方代码、抓包和调试产物）
+research/
+demo/xiaoxian/
+
+# 临时凭据、抓包和隐私数据
+*.har
+*.http
+*.pem
+*.key
+# 发布压缩包（由构建生成，不纳入源码）
+*.zip

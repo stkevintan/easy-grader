@@ -1,0 +1,8 @@
+{
+  "name": "easy-grader-tools",
+  "private": true,
+  "description": "track_third_party_grader.py 用 prettier 格式化原扩展代码，便于跨版本 diff",
+  "devDependencies": {
+    "prettier": "3.9.10"
+  }
+}

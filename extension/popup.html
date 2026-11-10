@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>Easy Grader</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body { width: 320px; margin: 0; font: 13px/1.5 -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; color: #0f172a; background: #fff; }
+  header { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid #e2e8f0; }
+  header b { font-size: 15px; }
+  main { padding: 12px 14px; }
+  section + section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f1f5f9; }
+  h3 { margin: 0 0 8px; font-size: 13px; color: #334155; }
+  label { display: block; margin: 6px 0 3px; color: #475569; font-size: 12px; }
+  input { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+  input:focus { outline: 2px solid #93c5fd; border-color: #60a5fa; }
+  .row { display: flex; gap: 8px; margin-top: 8px; }
+  .row > * { flex: 1; }
+  button { font: inherit; padding: 7px 10px; border-radius: 6px; border: 1px solid #cbd5e1; background: #fff; cursor: pointer; }
+  button:hover:not(:disabled) { background: #f8fafc; }
+  button:focus-visible { outline: 2px solid #2563eb; outline-offset: 1px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  button.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  button.primary:hover:not(:disabled) { background: #1d4ed8; }
+  button.link { border: 0; background: none; color: #2563eb; padding: 0; }
+  .muted { color: #64748b; font-size: 12px; }
+  .credits { font-size: 22px; font-weight: 600; }
+  .msg { margin-top: 8px; padding: 6px 8px; border-radius: 6px; font-size: 12px; white-space: pre-line; }
+  .msg.ok { background: #f0fdf4; color: #166534; }
+  .msg.error { background: #fef2f2; color: #991b1b; }
+  .msg:empty { display: none; }
+  ul { margin: 4px 0 0; padding: 0; list-style: none; }
+  li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 3px 0; font-size: 12px; }
+  li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<header>
+  <b>Easy Grader</b>
+  <button class="link" id="toggle-settings" type="button" aria-expanded="false" aria-controls="settings">设置</button>
+</header>
+<main>
+  <section id="settings" hidden>
+    <h3>设置</h3>
+    <!--DEV-ONLY--><div id="server-slot"></div><!--/DEV-ONLY-->
+    <div class="row">
+      <div><label for="min-conf">自动阅卷最低置信度</label><input id="min-conf" type="number" min="0" max="100" step="5" /></div>
+      <div><label for="interval">每份最小间隔（秒）</label><input id="interval" type="number" min="1" max="60" step="0.5" /></div>
+    </div>
+    <div class="row"><button id="save-settings" type="button">保存设置</button></div>
+    <div class="msg" id="settings-msg" role="status"></div>
+  </section>
+
+  <section id="login" hidden>
+    <h3>登录</h3>
+    <form id="login-form">
+      <label for="username">用户名</label>
+      <input id="username" autocomplete="username" required maxlength="32" />
+      <label for="password">密码</label>
+      <input id="password" type="password" autocomplete="current-password" required minlength="8" maxlength="128" />
+      <div class="row">
+        <button class="primary" type="submit" id="login-btn">登录</button>
+        <button type="button" id="register-btn">注册</button>
+      </div>
+    </form>
+    <div class="msg" id="login-msg" role="alert"></div>
+  </section>
+
+  <section id="account" hidden>
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <div><div class="muted" id="who"></div><div><span class="credits" id="credits">0</span> <span class="muted">次可用</span></div></div>
+      <button class="link" id="logout" type="button">退出</button>
+    </div>
+    <form id="redeem-form" class="row">
+      <input id="code" placeholder="兑换码，如 EG-XXXX-XXXX" maxlength="40" aria-label="兑换码" required />
+      <button type="submit" style="flex:0 0 auto">兑换</button>
+    </form>
+    <div class="msg" id="redeem-msg" role="status"></div>
+  </section>
+
+  <section id="page" hidden>
+    <h3>当前页面</h3>
+    <div class="muted" id="page-origin"></div>
+    <div class="row">
+      <button class="primary" id="open-panel" type="button">打开阅卷面板</button>
+    </div>
+    <div class="row" id="site-row">
+      <button id="enable-site" type="button">在此站点启用</button>
+    </div>
+    <div class="msg" id="page-msg" role="status"></div>
+  </section>
+
+  <section id="sites-section" hidden>
+    <h3>已启用的站点</h3>
+    <ul id="sites"></ul>
+  </section>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>

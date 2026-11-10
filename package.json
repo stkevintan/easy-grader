@@ -1,0 +1,15 @@
+{
+  "name": "easy-grader",
+  "private": true,
+  "packageManager": "pnpm@12.16.1",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "pnpm --filter easy-grader-server --filter easy-grader-extension run build",
+    "build:dev": "pnpm --filter easy-grader-server run build && pnpm --filter easy-grader-extension run build:dev",
+    "dev": "pnpm --filter easy-grader-server run dev",
+    "test": "pnpm --filter easy-grader-server --filter easy-grader-extension run test",
+    "test:e2e": "pnpm run build:dev && pnpm --filter easy-grader-e2e run test"
+  }
+}

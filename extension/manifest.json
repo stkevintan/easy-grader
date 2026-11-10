@@ -1,0 +1,40 @@
+{
+  "manifest_version": 3,
+  "name": "Easy Grader 阅卷助手",
+  "version": "0.1.0",
+  "description": "在网页阅卷平台上读取答卷、请求 AI 建议分并辅助给分。默认人工确认，自动连续阅卷需手动开启。",
+  "minimum_chrome_version": "110",
+  "permissions": ["storage", "activeTab", "scripting", "tabs"],
+  "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "icons": {
+    "16": "icons/16.png",
+    "32": "icons/32.png",
+    "48": "icons/48.png",
+    "128": "icons/128.png"
+  },
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Easy Grader",
+    "default_icon": {
+      "16": "icons/16.png",
+      "32": "icons/32.png",
+      "48": "icons/48.png",
+      "128": "icons/128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://127.0.0.1/demo/*", "http://localhost/demo/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["http://127.0.0.1/demo/*", "http://localhost/demo/*"],
+      "js": ["insert.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>模拟阅卷平台 · 扫描件（大白底）</title>
+<style>
+  :root { color-scheme: light; }
+  body { margin: 0; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: #eef1f5; color: #1f2937; }
+  header { display: flex; gap: 24px; padding: 10px 20px; background: #7c2d12; color: #fff; }
+  main { display: grid; grid-template-columns: 1fr 260px; gap: 16px; padding: 16px 20px; }
+  .paper { background: #fff; border-radius: 8px; padding: 12px; }
+  canvas { width: 100%; height: auto; display: block; border: 1px solid #e5e7eb; }
+  aside { background: #fff; border-radius: 8px; padding: 16px; align-self: start; }
+  input { width: 100%; box-sizing: border-box; font-size: 20px; padding: 6px 8px; }
+  button { margin-top: 12px; width: 100%; padding: 10px; font-size: 15px; border: 0; border-radius: 6px; background: #c2410c; color: #fff; }
+  .hint { font-size: 12px; color: #6b7280; }
+</style>
+</head>
+<body>
+<!--
+  模拟真实扫描答卷：大尺寸白底、只有一小段手写，位置每份不同。
+  用来回归“固定位置抽样像素全落在空白处，导致检测不到换卷”的问题。
+-->
+<header>
+  <b>模拟阅卷平台（扫描件）</b>
+  <span>考试：<span id="exam-title">2026 秋季期中考试 高二语文</span></span>
+  <span>题号：<span id="question-no">17</span></span>
+  <span id="max-score">满分 6 分</span>
+  <span>进度：<span id="progress">1</span> / <span id="total"></span></span>
+</header>
+<main>
+  <div class="paper"><canvas id="answer-canvas" width="1200" height="1600" aria-label="学生答卷"></canvas></div>
+  <aside>
+    <label for="score-input">给分</label>
+    <input id="score-input" type="number" min="0" max="6" step="1" />
+    <button id="submit-btn" type="button">提交并下一份</button>
+    <p class="hint">答卷是大白底扫描件，手写只占很小一块。</p>
+    <div id="log" aria-live="polite"></div>
+  </aside>
+</main>
+<script>
+  const ANSWERS = ['作者思念外婆', '写了院子', '外婆。', '怀念乡村生活', '亲情', '写了外婆！'];
+  const canvas = document.getElementById('answer-canvas');
+  const ctx = canvas.getContext('2d');
+  let i = 0;
+  document.getElementById('total').textContent = ANSWERS.length;
+  function render() {
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#222';
+    ctx.font = '30px "Kaiti SC", "KaiTi", serif';
+    ctx.fillText(ANSWERS[i], 80 + i * 13, 200 + i * 37);
+    document.getElementById('progress').textContent = i + 1;
+    document.getElementById('score-input').value = '';
+  }
+  document.getElementById('submit-btn').addEventListener('click', () => {
+    const v = document.getElementById('score-input').value;
+    if (v === '') return;
+    const line = document.createElement('div');
+    line.textContent = `第 ${i + 1} 份：${v} 分`;
+    document.getElementById('log').prepend(line);
+    // 真实平台常见：先清空画布（加载中），过一会儿再画下一份
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    setTimeout(() => {
+      if (i + 1 >= ANSWERS.length) return;
+      i += 1;
+      render();
+    }, 500);
+  });
+  render();
+</script>
+</body>
+</html>

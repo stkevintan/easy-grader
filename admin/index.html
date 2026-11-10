@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Easy Grader 管理后台</title>
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+<div id="login-view" class="login" hidden>
+  <form id="login-form" class="card login-card" aria-labelledby="login-title">
+    <h1 id="login-title">Easy Grader 管理后台</h1>
+    <label for="login-user">管理员账号</label>
+    <input id="login-user" autocomplete="username" required />
+    <label for="login-pass">密码</label>
+    <input id="login-pass" type="password" autocomplete="current-password" required />
+    <button class="primary" type="submit">登录</button>
+    <p class="error" id="login-error" role="alert"></p>
+  </form>
+</div>
+
+<div id="app-view" class="app" hidden>
+  <nav class="side" aria-label="主导航">
+    <div class="brand">Easy Grader</div>
+    <a href="#/dashboard" data-route="dashboard">概览</a>
+    <a href="#/users" data-route="users">用户</a>
+    <a href="#/codes" data-route="codes">兑换码</a>
+    <a href="#/records" data-route="records">评分记录</a>
+    <a href="#/presets" data-route="presets">适配预设</a>
+    <a href="#/ledger" data-route="ledger">额度流水</a>
+    <div class="side-foot">
+      <div id="me" class="muted"></div>
+      <button id="change-pass" class="link" type="button">修改密码</button>
+      <button id="logout" class="link" type="button">退出登录</button>
+    </div>
+  </nav>
+  <main id="main" tabindex="-1"></main>
+</div>
+
+<dialog id="dialog"><form method="dialog" id="dialog-form"></form></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>

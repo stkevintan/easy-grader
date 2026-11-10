@@ -1,0 +1,21 @@
+# 部署示例：
+#   cp .env.example .env    # 设置 ADMIN_PASSWORD、JWT_SECRET、MODEL_*
+#   docker compose up -d
+services:
+  server:
+    image: stkevintan/easy-grader-server:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # 以下几项由镜像约定，覆盖 .env 里的本地开发值
+      HOST: 0.0.0.0
+      PORT: 3000
+      DB_PATH: /data/app.db
+    ports:
+      # 只绑定本机，由前面的 HTTPS 反向代理（Nginx / Caddy）转发
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - easy-grader-data:/data
+
+volumes:
+  easy-grader-data:
