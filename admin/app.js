@@ -628,7 +628,7 @@ function memberDialog(unit, refresh) {
       { name: 'username', label: '用户名', required: true, maxlength: 32 },
       { name: 'role', label: '角色', type: 'select', options: UNIT_ROLES },
     ],
-    onSubmit: async (v) => { await api('POST', `/api/admin/units/${unit.id}/members`, v); toast('成员已保存'); refresh(); },
+    onSubmit: async (v) => { await api('POST', `/api/admin/units/${unit.id}/members`, v); toast('成员已保存'); refresh(); return false; },
   });
 }
 function unitMembersDialog(unit) {

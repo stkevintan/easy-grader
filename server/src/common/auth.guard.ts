@@ -77,8 +77,13 @@ export class AuthGuard implements CanActivate {
     }
     const unitRoles = this.reflector.getAllAndOverride<UnitRole[]>(UNIT_KEY, targets);
     if (unitRoles) {
-      const unitId = Number(req.headers['x-unit-id'] || req.query.unitId || req.body?.unitId || (req.params as { unitId?: string }).unitId || req.params.id);
+      const routeUnitId = Number((req.params as { unitId?: string; id?: string }).unitId ?? (req.params as { id?: string }).id);
+      const requestedUnitId = Number(req.headers['x-unit-id'] || req.query.unitId || req.body?.unitId);
+      const unitId = Number.isInteger(routeUnitId) && routeUnitId > 0 ? routeUnitId : requestedUnitId;
       if (!Number.isInteger(unitId) || unitId <= 0) throw new ForbiddenException('请指定管理单元');
+      if (Number.isInteger(routeUnitId) && routeUnitId > 0 && Number.isInteger(requestedUnitId) && requestedUnitId > 0 && routeUnitId !== requestedUnitId) {
+        throw new ForbiddenException('管理单元不一致');
+      }
       const membership = await this.users.manager.getRepository(UnitMembership).findOneBy({ unitId, userId: user.id });
       const unit = await this.users.manager.getRepository(ManagementUnit).findOneBy({ id: unitId, enabled: true });
       if (!unit || !membership || !unitRoles.includes(membership.role)) throw new ForbiddenException('无权访问该管理单元');
