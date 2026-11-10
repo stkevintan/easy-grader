@@ -70,7 +70,9 @@ th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--lin
 th { color: var(--muted); font-weight: 500; background: #f9fafb; position: sticky; top: 0; }
 td.wrap { white-space: normal; max-width: 320px; word-break: break-all; }
 tr:hover td { background: #fafbfc; }
-td .actions { display: flex; gap: 6px; }
+td .actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.member-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; max-height: 360px; overflow: auto; }
+.member-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 10px; border: 1px solid var(--line); border-radius: 7px; }
 .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: #f2f4f7; color: #344054; }
 .tag.ok { background: #ecfdf3; color: var(--ok); }
 .tag.warn { background: #fffaeb; color: var(--warn); }

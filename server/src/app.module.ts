@@ -8,6 +8,7 @@ import { dirname } from 'node:path';
 import { AdaptersController } from './adapters/adapters.controller';
 import { AdaptersService } from './adapters/adapters.service';
 import { AdminController } from './admin/admin.controller';
+import { UnitController } from './admin/unit.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { BillingService } from './billing/billing.service';
@@ -53,7 +54,7 @@ export class AppModule {
           { name: 'judge', ttl: 60_000, limit: cfg.rateLimit.judge },
         ]),
       ],
-      controllers: [AuthController, JudgeController, AdaptersController, AdminController],
+      controllers: [AuthController, JudgeController, AdaptersController, AdminController, UnitController],
       providers: [
         { provide: APP_CONFIG, useValue: cfg },
         BillingService,

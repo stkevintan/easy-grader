@@ -603,9 +603,78 @@ function presetsPage() {
   });
 }
 
+// ---------- 管理单元与 RBAC ----------
+
+const UNIT_ROLES = [['owner', '所有者'], ['manager', '管理员'], ['grader', '阅卷员'], ['viewer', '只读']];
+function unitDialog(unit, refresh) {
+  openDialog({
+    title: unit ? `编辑管理单元：${unit.name}` : '新建管理单元',
+    fields: [
+      { name: 'name', label: '名称', required: true, maxlength: 100, value: unit?.name },
+      { name: 'description', label: '说明', maxlength: 500, value: unit?.description },
+    ],
+    onSubmit: async (v) => {
+      if (unit) await api('PATCH', `/api/admin/units/${unit.id}`, { name: v.name.trim(), description: v.description.trim() });
+      else await api('POST', '/api/admin/units', { name: v.name.trim(), description: v.description.trim() });
+      toast('已保存');
+      refresh();
+    },
+  });
+}
+function memberDialog(unit, refresh) {
+  openDialog({
+    title: `添加成员：${unit.name}`,
+    fields: [
+      { name: 'username', label: '用户名', required: true, maxlength: 32 },
+      { name: 'role', label: '角色', type: 'select', options: UNIT_ROLES },
+    ],
+    onSubmit: async (v) => { await api('POST', `/api/admin/units/${unit.id}/members`, v); toast('成员已保存'); refresh(); return false; },
+  });
+}
+function unitMembersDialog(unit) {
+  const refresh = async () => {
+    const rows = await api('GET', `/api/admin/units/${unit.id}/members`);
+    const dlg = $('dialog-form');
+    dlg.replaceChildren(
+      h('h2', {}, `成员：${unit.name}`),
+      h('p', { class: 'muted' }, '角色权限：所有者可管理成员，管理员可管理本单元资源，阅卷员可评分，只读成员仅可查看。'),
+      h('div', { class: 'member-list' }, ...rows.map((m) => h('div', { class: 'member-row' },
+        h('span', {}, `${m.username} · ${m.role}`),
+        h('button', { type: 'button', onclick: async () => { await api('DELETE', `/api/admin/units/${unit.id}/members/${m.userId}`); toast('成员已移除'); refresh(); } }, '移除'),
+      ))),
+      h('div', { class: 'btns' }, h('button', { type: 'button', onclick: () => $('dialog').close() }, '关闭')),
+    );
+  };
+  $('dialog').showModal();
+  refresh().catch((e) => toast(e.message, true));
+}
+function unitsPage() {
+  return listPage({
+    title: '管理单元',
+    empty: '还没有管理单元。可以按学校、年级、教研组或阅卷项目创建。',
+    load: () => api('GET', '/api/admin/units').then((items) => ({ items, total: items.length, page: 1, pageSize: items.length || 1 })),
+    toolbar: [
+      h('span', { class: 'muted' }, '管理单元用于隔离成员和资源；每个单元支持 owner / manager / grader / viewer 角色。'),
+      (refresh) => h('button', { class: 'primary', onclick: () => unitDialog(null, refresh) }, '新建管理单元'),
+    ],
+    cols: [
+      { title: '名称', render: (u) => u.name },
+      { title: '说明', render: (u) => u.description || '—', wrap: true },
+      { title: '成员', render: (u) => u.memberCount },
+      { title: '状态', render: (u) => u.enabled ? tag('启用', 'ok') : tag('停用', 'bad') },
+      { title: '操作', render: (u) => actions(
+        linkBtn('成员', () => unitMembersDialog(u)),
+        linkBtn('添加成员', () => memberDialog(u, () => unitMembersDialog(u))),
+        linkBtn('编辑', () => unitDialog(u, () => route())),
+        linkBtn(u.enabled ? '停用' : '启用', async () => { await api('PATCH', `/api/admin/units/${u.id}`, { enabled: !u.enabled }); toast('状态已更新'); route(); }),
+      ) },
+    ],
+  });
+}
+
 // ---------- 路由 ----------
 
-const ROUTES = { dashboard: dashboardPage, users: usersPage, codes: codesPage, records: recordsPage, presets: presetsPage, ledger: ledgerPage };
+const ROUTES = { dashboard: dashboardPage, users: usersPage, codes: codesPage, records: recordsPage, presets: presetsPage, units: unitsPage, ledger: ledgerPage };
 
 function route() {
   if (!me) return;
