@@ -13,13 +13,15 @@ const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 interface Store {
   token?: string;
   user?: PublicUser;
+  units?: Array<{ id: number; name: string; role: string }>;
+  activeUnitId?: number;
   settings?: Partial<Settings>;
   sites?: string[];
 }
 
 const store = {
   async get(): Promise<Store> {
-    return (await chrome.storage.local.get(['token', 'user', 'settings', 'sites'])) as Store;
+    return (await chrome.storage.local.get(['token', 'user', 'settings', 'sites', 'units', 'activeUnitId'])) as Store;
   },
   set: (v: Partial<Store>) => chrome.storage.local.set(v),
   remove: (keys: (keyof Store)[]) => chrome.storage.local.remove(keys),
@@ -44,7 +46,7 @@ class ApiError extends Error {
 
 async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 15000): Promise<T> {
   const { serverUrl } = await settings();
-  const { token } = await store.get();
+  const { token, activeUnitId } = await store.get();
   let res: Response;
   try {
     res = await fetch(serverUrl.replace(/\/+$/, '') + path, {
@@ -52,6 +54,7 @@ async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 
       headers: {
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        ...(activeUnitId ? { 'x-unit-id': String(activeUnitId) } : {}),
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
@@ -196,6 +199,19 @@ async function handle(req: BgRequest, sender: Sender): Promise<unknown> {
     }
     case 'meta.get':
       return api('GET', '/api/meta');
+    case 'units.get': {
+      const units = await api<Array<{ id: number; name: string; role: string }>>('GET', '/api/units');
+      const current = (await store.get()).activeUnitId;
+      const activeUnitId = current && units.some((u) => u.id === current) ? current : units[0]?.id;
+      if (activeUnitId) await store.set({ units, activeUnitId });
+      return { units, activeUnitId };
+    }
+    case 'unit.set': {
+      const units = (await store.get()).units ?? [];
+      if (!units.some((u) => u.id === req.unitId)) throw new Error('管理单元不存在或无权访问');
+      await store.set({ activeUnitId: req.unitId });
+      return { activeUnitId: req.unitId };
+    }
     case 'adapter.resolve':
       return api('GET', `/api/adapters/resolve?${qs({ host: req.host, path: req.path })}`);
     case 'adapter.save':

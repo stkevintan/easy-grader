@@ -109,6 +109,7 @@ export class Panel {
 
   private async loadAdapter() {
     try {
+      await bg({ cmd: 'units.get' });
       const r = await bg<{ preset: Preset | null }>({ cmd: 'adapter.resolve', host: location.host, path: location.pathname });
       this.preset = r.preset;
       this.config = r.preset?.config ?? null;

@@ -40,6 +40,15 @@ export const CurrentUser = createParamDecorator(
   (_: unknown, ctx: ExecutionContext): AuthUser => ctx.switchToHttp().getRequest().user,
 );
 
+export interface UnitContext {
+  id: number;
+  role: UnitRole;
+}
+
+export const CurrentUnit = createParamDecorator(
+  (_: unknown, ctx: ExecutionContext): UnitContext => ctx.switchToHttp().getRequest().unit,
+);
+
 /**
  * 全局鉴权：Bearer JWT，每次请求都回表校验用户状态，
  * 这样禁用账号、改密码（tokenVersion+1）可以立即让旧令牌失效。
@@ -77,9 +86,13 @@ export class AuthGuard implements CanActivate {
     }
     const unitRoles = this.reflector.getAllAndOverride<UnitRole[]>(UNIT_KEY, targets);
     if (unitRoles) {
-      const routeUnitId = Number((req.params as { unitId?: string; id?: string }).unitId ?? (req.params as { id?: string }).id);
+      const routeUnitId = Number((req.params as { unitId?: string }).unitId);
       const requestedUnitId = Number(req.headers['x-unit-id'] || req.query.unitId || req.body?.unitId);
-      const unitId = Number.isInteger(routeUnitId) && routeUnitId > 0 ? routeUnitId : requestedUnitId;
+      let unitId = Number.isInteger(routeUnitId) && routeUnitId > 0 ? routeUnitId : requestedUnitId;
+      if (!Number.isInteger(unitId) || unitId <= 0) {
+        const personal = await this.users.manager.getRepository(UnitMembership).findOne({ where: { userId: user.id, role: 'owner' }, order: { id: 'ASC' } });
+        unitId = personal?.unitId ?? 0;
+      }
       if (!Number.isInteger(unitId) || unitId <= 0) throw new ForbiddenException('请指定管理单元');
       if (Number.isInteger(routeUnitId) && routeUnitId > 0 && Number.isInteger(requestedUnitId) && requestedUnitId > 0 && routeUnitId !== requestedUnitId) {
         throw new ForbiddenException('管理单元不一致');

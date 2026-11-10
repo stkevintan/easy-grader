@@ -32,7 +32,7 @@ export class AdaptersService implements OnApplicationBootstrap {
       const err = validateAdapterConfig(p.config);
       if (err) throw new Error(`内置预设 ${p.name} 不合法：${err}`);
       await this.presets.save(
-        this.presets.create({ ...p, scope: 'public', ownerId: null, enabled: true }),
+        this.presets.create({ ...p, scope: 'public', ownerId: null, unitId: null, enabled: true }),
       );
       this.log.log(`已写入内置适配预设：${p.name}`);
     }
@@ -50,33 +50,37 @@ export class AdaptersService implements OnApplicationBootstrap {
    * 给扩展用：按 host + path 找最合适的预设。
    * 优先级：自己的私有预设 > 公共预设；有 pathPattern 且命中的 > 没有 pathPattern 的；host 越精确越优先。
    */
-  async resolve(userId: number, host: string, path: string): Promise<AdapterPreset | null> {
-    const all = await this.presets.find({ where: [{ scope: 'public', enabled: true }, { ownerId: userId, enabled: true }] });
+  async resolve(userId: number, unitId: number, host: string, path: string): Promise<AdapterPreset | null> {
+    const all = await this.presets.find({ where: [
+      { scope: 'public', enabled: true },
+      { scope: 'unit', unitId, enabled: true },
+      { scope: 'private', ownerId: userId, unitId, enabled: true },
+    ] });
     const scored = all
       .filter((p) => hostMatches(host, p.hostPattern) && (!p.pathPattern || path.includes(p.pathPattern)))
       .map((p) => ({
         p,
         // 路径片段越长越具体
-        score: (p.ownerId === userId ? 10000 : 0) + (p.pathPattern ? 1000 + p.pathPattern.length * 10 : 0) + p.hostPattern.length,
+        score: (p.scope === 'private' && p.ownerId === userId ? 20000 : p.scope === 'unit' ? 10000 : 0) + (p.pathPattern ? 1000 + p.pathPattern.length * 10 : 0) + p.hostPattern.length,
       }))
       .sort((a, b) => b.score - a.score || b.p.updatedAt.getTime() - a.p.updatedAt.getTime());
     return scored[0]?.p ?? null;
   }
 
   /** 用户保存自己点选出来的配置（同 host+path 覆盖） */
-  async saveMine(userId: number, input: PresetInput) {
+  async saveMine(userId: number, unitId: number, input: PresetInput) {
     const v = this.check(input);
-    const existing = await this.presets.findOneBy({ ownerId: userId, hostPattern: v.hostPattern, pathPattern: v.pathPattern });
+    const existing = await this.presets.findOneBy({ ownerId: userId, unitId, scope: 'private', hostPattern: v.hostPattern, pathPattern: v.pathPattern });
     if (existing) return this.presets.save(Object.assign(existing, v, { enabled: true }));
-    return this.presets.save(this.presets.create({ ...v, scope: 'private', ownerId: userId, enabled: true }));
+    return this.presets.save(this.presets.create({ ...v, scope: 'private', ownerId: userId, unitId, enabled: true }));
   }
 
-  listMine(userId: number) {
-    return this.presets.find({ where: { ownerId: userId }, order: { updatedAt: 'DESC' } });
+  listMine(userId: number, unitId: number) {
+    return this.presets.find({ where: { ownerId: userId, unitId }, order: { updatedAt: 'DESC' } });
   }
 
-  async deleteMine(userId: number, id: number) {
-    const r = await this.presets.delete({ id, ownerId: userId });
+  async deleteMine(userId: number, unitId: number, id: number) {
+    const r = await this.presets.delete({ id, ownerId: userId, unitId });
     if (!r.affected) throw new NotFoundException('预设不存在');
     return { ok: true };
   }

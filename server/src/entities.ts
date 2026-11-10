@@ -104,10 +104,12 @@ export class RedeemUse {
 
 /** 一道题的阅卷任务：题目、参考答案、评分标准 */
 @Entity('tasks')
+@Index(['unitId', 'platformHost', 'examTitle', 'questionNo'])
 @Index(['userId', 'platformHost', 'examTitle', 'questionNo'])
 export class GradingTask {
   @PrimaryGeneratedColumn() id!: number;
   @Column({ type: 'integer' }) userId!: number;
+  @Column({ type: 'integer', nullable: true }) unitId!: number | null;
   @Column({ type: 'varchar', default: '' }) platformHost!: string;
   @Column({ type: 'varchar', default: '' }) examTitle!: string;
   @Column({ type: 'varchar', default: '' }) questionNo!: string;
@@ -126,11 +128,13 @@ export type RecordStatus = 'done' | 'failed';
 
 /** 一份答卷的评分记录；不保存答卷图片，只存 sha256 */
 @Entity('judge_records')
+@Index(['unitId', 'taskId', 'imageSha256'])
 @Index(['userId', 'taskId', 'imageSha256'])
 @Index(['createdAt'])
 export class JudgeRecord {
   @PrimaryGeneratedColumn() id!: number;
   @Column({ type: 'integer' }) userId!: number;
+  @Column({ type: 'integer', nullable: true }) unitId!: number | null;
   @Column({ type: 'integer' }) taskId!: number;
   @Column({ type: 'varchar', length: 64 }) imageSha256!: string;
   @Column({ type: 'varchar' }) status!: RecordStatus;
@@ -149,7 +153,7 @@ export class JudgeRecord {
   @Column({ type: 'datetime', nullable: true }) confirmedAt!: Date | null;
 }
 
-export type PresetScope = 'public' | 'private';
+export type PresetScope = 'public' | 'unit' | 'private';
 
 /** 平台适配预设：按 host（+可选路径片段）匹配，内容是选择器配置 */
 @Entity('adapter_presets')
@@ -164,6 +168,7 @@ export class AdapterPreset {
   @Column({ type: 'simple-json' }) config!: AdapterConfig;
   @Column({ type: 'varchar', default: 'private' }) scope!: PresetScope;
   @Column({ type: 'integer', nullable: true }) ownerId!: number | null;
+  @Column({ type: 'integer', nullable: true }) unitId!: number | null;
   @Column({ type: 'boolean', default: true }) enabled!: boolean;
   @Column({ type: 'varchar', default: '' }) note!: string;
   @CreateDateColumn() createdAt!: Date;

@@ -1,10 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
 import { ThrottleBucket } from '../common/throttler.guard';
-import { AuthUser, CurrentUser } from '../common/auth.guard';
+import { AuthUser, CurrentUnit, CurrentUser, UnitAccess, UnitContext } from '../common/auth.guard';
 import { ConfirmDto, FindTaskQuery, JudgeDto, ListQuery, SUBJECTS, UpsertTaskDto } from './judge.dto';
 import { JudgeService } from './judge.service';
 
 
+@UnitAccess(['viewer', 'grader', 'manager', 'owner'])
 @Controller('api')
 export class JudgeController {
   constructor(private readonly judge: JudgeService) {}
@@ -16,45 +17,48 @@ export class JudgeController {
 
   /** 扩展打开一道题时，用 平台+考试+题号 找上次的配置（断点续阅） */
   @Get('tasks/lookup')
-  async lookup(@CurrentUser() u: AuthUser, @Query() q: FindTaskQuery) {
-    return { task: await this.judge.findTask(u.id, q.platformHost, q.examTitle, q.questionNo) };
+  async lookup(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Query() q: FindTaskQuery) {
+    if (q.unitId !== undefined && q.unitId !== unit.id) throw new BadRequestException('管理单元不一致');
+    return { task: await this.judge.findTask(u.id, unit.id, q.platformHost, q.examTitle, q.questionNo) };
   }
 
   @Get('tasks')
-  list(@CurrentUser() u: AuthUser) {
-    return this.judge.listTasks(u.id);
+  list(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext) {
+    return this.judge.listTasks(u.id, unit.id);
   }
 
   @Put('tasks')
-  upsert(@CurrentUser() u: AuthUser, @Body() dto: UpsertTaskDto) {
-    return this.judge.upsertTask(u.id, dto);
+  upsert(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Body() dto: UpsertTaskDto) {
+    if (dto.unitId !== undefined && dto.unitId !== unit.id) throw new BadRequestException('管理单元不一致');
+    return this.judge.upsertTask(u.id, unit.id, dto);
   }
 
   @Get('tasks/:id')
-  get(@CurrentUser() u: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    return this.judge.getTask(u.id, id);
+  get(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Param('id', ParseIntPipe) id: number) {
+    return this.judge.getTask(u.id, unit.id, id);
   }
 
   @Delete('tasks/:id')
-  remove(@CurrentUser() u: AuthUser, @Param('id', ParseIntPipe) id: number) {
-    return this.judge.deleteTask(u.id, id);
+  remove(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Param('id', ParseIntPipe) id: number) {
+    return this.judge.deleteTask(u.id, unit.id, id);
   }
 
   @ThrottleBucket('judge')
   @HttpCode(200)
   @Post('judge')
-  run(@CurrentUser() u: AuthUser, @Body() dto: JudgeDto) {
-    return this.judge.judge(u.id, dto.taskId, dto.image, dto.force);
+  run(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Body() dto: JudgeDto) {
+    if (dto.unitId !== undefined && dto.unitId !== unit.id) throw new BadRequestException('管理单元不一致');
+    return this.judge.judge(u.id, unit.id, dto.taskId, dto.image, dto.force);
   }
 
   @HttpCode(200)
   @Post('records/:id/confirm')
-  confirm(@CurrentUser() u: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() dto: ConfirmDto) {
-    return this.judge.confirm(u.id, id, dto.finalScore, dto.autoSubmitted);
+  confirm(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Param('id', ParseIntPipe) id: number, @Body() dto: ConfirmDto) {
+    return this.judge.confirm(u.id, unit.id, id, dto.finalScore, dto.autoSubmitted);
   }
 
   @Get('records')
-  records(@CurrentUser() u: AuthUser, @Query() q: ListQuery) {
-    return this.judge.listRecords(u.id, q.taskId, q.page, q.pageSize);
+  records(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Query() q: ListQuery) {
+    return this.judge.listRecords(u.id, unit.id, q.taskId, q.page, q.pageSize);
   }
 }

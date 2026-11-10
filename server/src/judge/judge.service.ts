@@ -52,22 +52,22 @@ export class JudgeService {
 
   // ---------- 任务 ----------
 
-  findTask(userId: number, platformHost: string, examTitle: string, questionNo: string) {
+  findTask(userId: number, unitId: number, platformHost: string, examTitle: string, questionNo: string) {
     return this.tasks.findOne({
-      where: { userId, platformHost, examTitle, questionNo },
+      where: { unitId, platformHost, examTitle, questionNo },
       order: { updatedAt: 'DESC' },
     });
   }
 
-  async getTask(userId: number, id: number): Promise<GradingTask> {
-    const t = await this.tasks.findOneBy({ id, userId });
+  async getTask(userId: number, unitId: number, id: number): Promise<GradingTask> {
+    const t = await this.tasks.findOneBy({ id, userId, unitId });
     if (!t) throw new NotFoundException('阅卷任务不存在');
     return t;
   }
 
   /** 平台 + 考试 + 题号相同则更新，否则新建 */
-  async upsertTask(userId: number, dto: UpsertTaskDto): Promise<GradingTask> {
-    const existing = await this.findTask(userId, dto.platformHost, dto.examTitle, dto.questionNo);
+  async upsertTask(userId: number, unitId: number, dto: UpsertTaskDto): Promise<GradingTask> {
+    const existing = await this.findTask(userId, unitId, dto.platformHost, dto.examTitle, dto.questionNo);
     const fields = {
       subject: dto.subject,
       questionType: dto.questionType ?? '',
@@ -81,6 +81,7 @@ export class JudgeService {
     return this.tasks.save(
       this.tasks.create({
         userId,
+        unitId,
         platformHost: dto.platformHost,
         examTitle: dto.examTitle,
         questionNo: dto.questionNo,
@@ -89,14 +90,14 @@ export class JudgeService {
     );
   }
 
-  async listTasks(userId: number) {
-    const rows = await this.tasks.find({ where: { userId }, order: { updatedAt: 'DESC' }, take: 200 });
+  async listTasks(userId: number, unitId: number) {
+    const rows = await this.tasks.find({ where: { unitId }, order: { updatedAt: 'DESC' }, take: 200 });
     const counts = await this.records
       .createQueryBuilder('r')
       .select('r.taskId', 'taskId')
       .addSelect('COUNT(*)', 'total')
       .addSelect('SUM(CASE WHEN r.confirmedAt IS NOT NULL THEN 1 ELSE 0 END)', 'confirmed')
-      .where('r.userId = :userId AND r.status = :s', { userId, s: 'done' })
+      .where('r.unitId = :unitId AND r.status = :s', { unitId, s: 'done' })
       .groupBy('r.taskId')
       .getRawMany<{ taskId: number; total: number; confirmed: number }>();
     const byId = new Map(counts.map((c) => [Number(c.taskId), c]));
@@ -107,9 +108,9 @@ export class JudgeService {
     }));
   }
 
-  async deleteTask(userId: number, id: number) {
-    const t = await this.getTask(userId, id);
-    await this.records.delete({ userId, taskId: t.id });
+  async deleteTask(userId: number, unitId: number, id: number) {
+    const t = await this.getTask(userId, unitId, id);
+    await this.records.delete({ unitId, taskId: t.id });
     await this.tasks.delete({ id: t.id });
     return { ok: true };
   }
@@ -125,30 +126,30 @@ export class JudgeService {
     return { bytes: buf.length, sha256: createHash('sha256').update(buf).digest('hex') };
   }
 
-  async judge(userId: number, taskId: number, image: string, force = false): Promise<JudgeResultView> {
-    const task = await this.getTask(userId, taskId);
+  async judge(userId: number, unitId: number, taskId: number, image: string, force = false): Promise<JudgeResultView> {
+    const task = await this.getTask(userId, unitId, taskId);
     const { sha256 } = this.decodeImage(image);
 
     if (!force) {
       const prev = await this.records.findOne({
-        where: { userId, taskId, imageSha256: sha256, status: 'done' },
+        where: { unitId, taskId, imageSha256: sha256, status: 'done' },
         order: { id: 'DESC' },
       });
       if (prev) return this.view(prev, task, true);
     }
 
-    const key = `${userId}:${taskId}:${sha256}`;
+    const key = `${unitId}:${taskId}:${sha256}`;
     const running = this.inflight.get(key);
     if (running) return running;
-    const p = this.runJudge(userId, task, image, sha256).finally(() => this.inflight.delete(key));
+    const p = this.runJudge(userId, unitId, task, image, sha256).finally(() => this.inflight.delete(key));
     this.inflight.set(key, p);
     return p;
   }
 
   /** 先扣费再调模型；模型失败则退还并记一条失败记录 */
-  private async runJudge(userId: number, task: GradingTask, image: string, sha256: string): Promise<JudgeResultView> {
+  private async runJudge(userId: number, unitId: number, task: GradingTask, image: string, sha256: string): Promise<JudgeResultView> {
     let rec = await this.records.save(
-      this.records.create({ userId, taskId: task.id, imageSha256: sha256, status: 'failed', charged: false }),
+      this.records.create({ userId, unitId, taskId: task.id, imageSha256: sha256, status: 'failed', charged: false }),
     );
     try {
       this.billing.adjust(userId, -1, 'judge', rec.id, `任务 #${task.id}`);
@@ -162,7 +163,7 @@ export class JudgeService {
     const started = Date.now();
     try {
       // 自动学习：把本题老师确认过的成绩作为评分示例，帮模型校准尺度
-      const examples = await this.gold.forTask(userId, task.id, rec.id);
+      const examples = await this.gold.forTask(unitId, task.id, rec.id);
       const v = await this.model.grade(task, image, sha256, rec.id, examples);
       Object.assign(rec, {
         status: 'done',
@@ -212,10 +213,10 @@ export class JudgeService {
     };
   }
 
-  async confirm(userId: number, recordId: number, finalScore: number, autoSubmitted = false) {
-    const r = await this.records.findOneBy({ id: recordId, userId });
+  async confirm(userId: number, unitId: number, recordId: number, finalScore: number, autoSubmitted = false) {
+    const r = await this.records.findOneBy({ id: recordId, unitId });
     if (!r || r.status !== 'done') throw new NotFoundException('评分记录不存在');
-    const task = await this.getTask(userId, r.taskId);
+    const task = await this.getTask(userId, unitId, r.taskId);
     if (finalScore > task.maxScore) throw new BadRequestException('分数超过满分');
     r.finalScore = finalScore;
     r.autoSubmitted = autoSubmitted;
@@ -224,8 +225,8 @@ export class JudgeService {
     return { ok: true };
   }
 
-  async listRecords(userId: number, taskId: number | undefined, page = 1, pageSize = 20) {
-    const where = taskId ? { userId, taskId } : { userId };
+  async listRecords(userId: number, unitId: number, taskId: number | undefined, page = 1, pageSize = 20) {
+    const where = taskId ? { unitId, taskId } : { unitId };
     const [items, total] = await this.records.findAndCount({
       where,
       order: { id: 'DESC' },

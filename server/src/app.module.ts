@@ -9,6 +9,7 @@ import { AdaptersController } from './adapters/adapters.controller';
 import { AdaptersService } from './adapters/adapters.service';
 import { AdminController } from './admin/admin.controller';
 import { UnitController } from './admin/unit.controller';
+import { UnitApiController } from './unit.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { BillingService } from './billing/billing.service';
@@ -22,6 +23,7 @@ import { GoldService } from './judge/gold.service';
 import { ModelService } from './judge/model.service';
 import { TraceService } from './trace/trace.service';
 import { InviteService } from './invite.service';
+import { UnitService } from './unit.service';
 
 @Module({})
 export class AppModule {
@@ -55,7 +57,7 @@ export class AppModule {
           { name: 'judge', ttl: 60_000, limit: cfg.rateLimit.judge },
         ]),
       ],
-      controllers: [AuthController, JudgeController, AdaptersController, AdminController, UnitController],
+      controllers: [AuthController, JudgeController, AdaptersController, AdminController, UnitController, UnitApiController],
       providers: [
         { provide: APP_CONFIG, useValue: cfg },
         BillingService,
@@ -66,6 +68,7 @@ export class AppModule {
         AdaptersService,
         TraceService,
         InviteService,
+        UnitService,
         // 顺序重要：先鉴权（写入 req.user），再按用户限流
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_GUARD, useClass: UserThrottlerGuard },

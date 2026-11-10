@@ -155,9 +155,22 @@ function mountServerField() {
 
 async function loadSettings() {
   const s = await bg<Settings>({ cmd: 'settings.get' });
+  if (user) await loadUnits();
   if (__DEV__) $<HTMLInputElement>('server-url').value = s.serverUrl;
   $<HTMLInputElement>('min-conf').value = String(Math.round(s.autoMinConfidence * 100));
   $<HTMLInputElement>('interval').value = String(s.autoIntervalMs / 1000);
+}
+
+async function loadUnits() {
+  try {
+    const r = await bg<{ units: Array<{ id: number; name: string; role: string }>; activeUnitId?: number }>({ cmd: 'units.get' });
+    const select = $<HTMLSelectElement>('unit-select');
+    select.replaceChildren(...r.units.map((unit) => new Option(`${unit.name}（${unit.role}）`, String(unit.id))));
+    if (r.activeUnitId) select.value = String(r.activeUnitId);
+    select.disabled = r.units.length < 2;
+  } catch (e) {
+    say('unit-msg', 'error', errText(e));
+  }
 }
 
 async function saveSettings() {
@@ -194,6 +207,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     $('toggle-settings').setAttribute('aria-expanded', String(open));
   });
   $('save-settings').addEventListener('click', saveSettings);
+  $('unit-select').addEventListener('change', async () => {
+    try {
+      await bg({ cmd: 'unit.set', unitId: Number($<HTMLSelectElement>('unit-select').value) });
+      say('unit-msg', 'ok', '管理单元已切换');
+    } catch (e) {
+      say('unit-msg', 'error', errText(e));
+    }
+  });
   $('login-form').addEventListener('submit', (e) => {
     e.preventDefault();
     void login();

@@ -64,12 +64,12 @@ export class GoldService {
     return this.cfg.gold.enabled && this.cfg.gold.maxExamples > 0;
   }
 
-  async forTask(userId: number, taskId: number, excludeRecordId?: number): Promise<GoldExample[]> {
+  async forTask(unitId: number, taskId: number, excludeRecordId?: number): Promise<GoldExample[]> {
     if (!this.enabled) return [];
     try {
       const qb = this.records
         .createQueryBuilder('r')
-        .where('r.userId = :userId AND r.taskId = :taskId', { userId, taskId })
+        .where('r.unitId = :unitId AND r.taskId = :taskId', { unitId, taskId })
         .andWhere('r.status = :status', { status: 'done' })
         .andWhere('r.autoSubmitted = 0')
         .andWhere('r.finalScore IS NOT NULL')

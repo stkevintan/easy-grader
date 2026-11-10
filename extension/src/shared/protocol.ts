@@ -12,6 +12,7 @@ export interface PublicUser {
 
 export interface Settings {
   serverUrl: string;
+  activeUnitId?: number;
   /** 半自动：换到新答卷时自动获取建议分，但不写入、不提交 */
   autoJudge: boolean;
   /** 自动连续阅卷时，置信度低于该值就暂停让人工确认 */
@@ -30,6 +31,7 @@ export const DEFAULT_SETTINGS: Settings = {
 
 export interface GradingTask {
   id: number;
+  unitId?: number;
   platformHost: string;
   examTitle: string;
   questionNo: string;
@@ -61,6 +63,7 @@ export interface JudgeResult {
 
 export interface Preset {
   id: number;
+  unitId: number | null;
   name: string;
   hostPattern: string;
   pathPattern: string;
@@ -79,6 +82,8 @@ export type BgRequest =
   | { cmd: 'settings.get' }
   | { cmd: 'settings.set'; settings: Partial<Settings> }
   | { cmd: 'meta.get' }
+  | { cmd: 'units.get' }
+  | { cmd: 'unit.set'; unitId: number }
   | { cmd: 'adapter.resolve'; host: string; path: string }
   | { cmd: 'adapter.save'; name: string; hostPattern: string; pathPattern: string; config: AdapterConfig }
   | { cmd: 'task.lookup'; platformHost: string; examTitle: string; questionNo: string }

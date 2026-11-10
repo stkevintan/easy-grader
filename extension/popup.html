@@ -13,7 +13,7 @@
   section + section { margin-top: 14px; padding-top: 12px; border-top: 1px solid #f1f5f9; }
   h3 { margin: 0 0 8px; font-size: 13px; color: #334155; }
   label { display: block; margin: 6px 0 3px; color: #475569; font-size: 12px; }
-  input { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+  input, select { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
   input:focus { outline: 2px solid #93c5fd; border-color: #60a5fa; }
   .row { display: flex; gap: 8px; margin-top: 8px; }
   .row > * { flex: 1; }
@@ -44,6 +44,9 @@
 <main>
   <section id="settings" hidden>
     <h3>设置</h3>
+    <label for="unit-select">当前管理单元</label>
+    <select id="unit-select"></select>
+    <div class="msg" id="unit-msg" role="status"></div>
     <!--DEV-ONLY--><div id="server-slot"></div><!--/DEV-ONLY-->
     <div class="row">
       <div><label for="min-conf">自动阅卷最低置信度</label><input id="min-conf" type="number" min="0" max="100" step="5" /></div>

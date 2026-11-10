@@ -16,6 +16,7 @@ import {
 export const SUBJECTS = ['语文', '数学', '英语', '历史', '地理', '道德与法治', '政治', '物理', '化学', '生物', '其他'];
 
 export class UpsertTaskDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) unitId?: number;
   @IsString() @MaxLength(255) platformHost!: string;
   @IsString() @MaxLength(200) examTitle!: string;
   @IsString() @MaxLength(100) questionNo!: string;
@@ -29,12 +30,14 @@ export class UpsertTaskDto {
 }
 
 export class FindTaskQuery {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) unitId?: number;
   @IsString() @MaxLength(255) platformHost!: string;
   @IsString() @MaxLength(200) examTitle!: string;
   @IsString() @MaxLength(100) questionNo!: string;
 }
 
 export class JudgeDto {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) unitId?: number;
   @Type(() => Number) @IsInt() taskId!: number;
   /** data:image/(png|jpeg|webp);base64,... */
   @IsString()
