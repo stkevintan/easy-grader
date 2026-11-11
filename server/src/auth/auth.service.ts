@@ -9,9 +9,9 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { InjectRepository } from '@nestjs/typeorm';
+import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { hashPassword, verifyPassword } from '../common/password';
 import { APP_CONFIG, AppConfig } from '../config';
@@ -43,6 +43,7 @@ export class AuthService implements OnApplicationBootstrap {
 
   constructor(
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    @InjectDataSource() private readonly ds: DataSource,
     @InjectRepository(User) private readonly users: Repository<User>,
     private readonly jwt: JwtService,
     private readonly billing: BillingService,
@@ -81,19 +82,22 @@ export class AuthService implements OnApplicationBootstrap {
 
   async register(username: string, password: string, inviteToken: string) {
     if (!this.cfg.allowRegister) throw new ForbiddenException('当前未开放注册，请联系管理员开通账号');
-    const unitId = await this.invites.consume(inviteToken);
     if (await this.users.existsBy({ username })) throw new ConflictException('用户名已被占用');
-    let user = this.users.create({ username, passwordHash: await hashPassword(password), role: 'user', credits: 0, lastLoginAt: new Date() });
-    try {
-      user = await this.users.save(user);
-    } catch {
-      throw new ConflictException('用户名已被占用');
-    }
-    if (this.cfg.initialCredits > 0) {
-      user.credits = this.billing.adjust(user.id, this.cfg.initialCredits, 'register', null, '注册赠送');
-    }
-    await this.memberships.save(this.memberships.create({ unitId, userId: user.id, role: 'grader' }));
-    return this.issue(user);
+    return this.ds.transaction(async (manager) => {
+      const unitId = await this.invites.consume(inviteToken, manager);
+      const users = manager.getRepository(User);
+      let user = users.create({ username, passwordHash: await hashPassword(password), role: 'user', credits: 0, lastLoginAt: new Date() });
+      try {
+        user = await users.save(user);
+      } catch {
+        throw new ConflictException('用户名已被占用');
+      }
+      if (this.cfg.initialCredits > 0) {
+        user.credits = this.billing.adjust(user.id, this.cfg.initialCredits, 'register', null, '注册赠送');
+      }
+      await manager.getRepository(UnitMembership).save(manager.getRepository(UnitMembership).create({ unitId, userId: user.id, role: 'grader' }));
+      return this.issue(user);
+    });
   }
 
   async login(username: string, password: string) {

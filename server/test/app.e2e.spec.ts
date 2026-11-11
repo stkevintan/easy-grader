@@ -78,7 +78,7 @@ describe('Easy Grader server (e2e)', () => {
     userToken = r.body.token;
     userId = r.body.user.id;
     expect(r.body.user.credits).toBe(3);
-    await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0] }).expect(400);
+    await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0] }).expect(409);
     const invite2 = await http.post('/api/admin/invites').set(auth(adminToken)).send({ unitId: unit.body.id, count: 1, maxUses: 1 }).expect(201);
     await http.post('/api/auth/register').send({ username: '王老师', password: 'password-123', inviteToken: invite2.body.tokens[0] }).expect(201);
   });

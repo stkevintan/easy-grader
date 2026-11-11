@@ -459,7 +459,11 @@ function invitesPage() {
     load: ({ q }) => api('GET', `/api/admin/invites?${qs({ q })}`),
     toolbar: [
       (refresh) => h('button', { class: 'primary', onclick: async () => {
-        const units = await api('GET', '/api/admin/units');
+        const units = (await api('GET', '/api/admin/units')).filter((u) => u.enabled);
+        if (!units.length) {
+          toast('请先创建或启用管理单元', true);
+          return;
+        }
         openDialog({
           title: '生成单元邀请令牌',
           fields: [
@@ -473,7 +477,7 @@ function invitesPage() {
           onSubmit: async (v) => {
             const r = await api('POST', '/api/admin/invites', { unitId: Number(v.unitId), count: Number(v.count), maxUses: Number(v.maxUses) || 1, expiresAt: v.expiresAt ? new Date(`${v.expiresAt}T23:59:59`).toISOString() : undefined, note: v.note || undefined });
             refresh();
-            openDialog({ title: `已生成 ${r.tokens.length} 个邀请令牌`, fields: [{ name: 'tokens', label: '复制后分发', type: 'textarea', value: r.tokens.join('\n'), readonly: true }], extra: h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(r.tokens.join('\n')).then(() => toast('已复制')) }, '复制全部') });
+            setTimeout(() => openDialog({ title: `已生成 ${r.tokens.length} 个邀请令牌`, fields: [{ name: 'tokens', label: '复制后分发', type: 'textarea', value: r.tokens.join('\n'), readonly: true }], extra: h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(r.tokens.join('\n')).then(() => toast('已复制')) }, '复制全部') }), 0);
           },
         });
       } }, '生成邀请令牌'),
@@ -481,7 +485,7 @@ function invitesPage() {
     cols: [
       { title: '单元', render: (x) => x.unitId },
       { title: '已用/上限', render: (x) => `${x.usedCount} / ${x.maxUses}` },
-      { title: '状态', render: (x) => x.disabled ? tag('已停用', 'bad') : x.usedCount >= x.maxUses ? tag('已用完') : tag('可用', 'ok') },
+      { title: '状态', render: (x) => x.disabled ? tag('已停用', 'bad') : x.expiresAt && new Date(String(x.expiresAt).replace(' ', 'T') + 'Z') < new Date() ? tag('已过期', 'warn') : x.usedCount >= x.maxUses ? tag('已用完') : tag('可用', 'ok') },
       { title: '过期时间', render: (x) => fmtTime(x.expiresAt) },
       { title: '备注', render: (x) => x.note || '—', wrap: true },
       { title: '操作', render: (x) => linkBtn(x.disabled ? '启用' : '停用', async () => { await api('PATCH', `/api/admin/invites/${x.id}`, { disabled: !x.disabled }); route(); }, x.disabled ? '' : 'danger') },

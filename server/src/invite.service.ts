@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { EntityManager, Repository } from 'typeorm';
 import { InviteToken, ManagementUnit } from './entities';
 
 const hashToken = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -22,8 +22,9 @@ export class InviteService {
       try {
         await this.tokens.insert({ tokenHash: hashToken(token), unitId, maxUses, expiresAt, note: note.slice(0, 200), createdBy });
         result.push(token);
-      } catch {
-        // Extremely unlikely hash collision; generate another token.
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code !== 'SQLITE_CONSTRAINT_UNIQUE') throw error;
       }
     }
     return result;
@@ -41,15 +42,21 @@ export class InviteService {
     return { ok: true };
   }
 
-  async consume(rawToken: string) {
+  async consume(rawToken: string, manager?: EntityManager) {
     const token = rawToken.trim().toUpperCase();
     if (!token) throw new BadRequestException('请输入邀请令牌');
-    const row = await this.tokens.findOneBy({ tokenHash: hashToken(token) });
+    const tokenRepo = manager?.getRepository(InviteToken) ?? this.tokens;
+    const unitRepo = manager?.getRepository(ManagementUnit) ?? this.units;
+    const row = await tokenRepo.findOneBy({ tokenHash: hashToken(token) });
     if (!row || row.disabled) throw new BadRequestException('邀请令牌无效');
     if (row.expiresAt && row.expiresAt < new Date()) throw new BadRequestException('邀请令牌已过期');
-    if (row.usedCount >= row.maxUses) throw new BadRequestException('邀请令牌已用完');
-    row.usedCount += 1;
-    await this.tokens.save(row);
+    if (!(await unitRepo.existsBy({ id: row.unitId, enabled: true }))) throw new BadRequestException('邀请令牌所属单元已停用');
+    const result = await tokenRepo.createQueryBuilder()
+      .update(InviteToken)
+      .set({ usedCount: () => 'usedCount + 1' })
+      .where('id = :id AND disabled = 0 AND usedCount < maxUses', { id: row.id })
+      .execute();
+    if (!result.affected) throw new BadRequestException('邀请令牌已用完');
     return row.unitId;
   }
 }
