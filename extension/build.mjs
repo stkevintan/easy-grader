@@ -32,6 +32,8 @@ await build({
     popup: 'src/popup.ts',
   },
   bundle: true,
+  jsx: 'automatic',
+  jsxImportSource: 'preact',
   // 发布版压缩并去掉 sourcemap；__DEV__ 为 false 的分支会被当作死代码删除
   minify: !dev,
   sourcemap: dev ? 'linked' : false,
