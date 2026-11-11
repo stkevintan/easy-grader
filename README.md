@@ -15,6 +15,12 @@
 | `e2e/` | Playwright 端到端测试：真实 Chromium 加载扩展跑完整流程 |
 | `tools/` | 原扩展版本追踪脚本 |
 
+## 文档
+
+- [数据库设计](docs/database.md)：表结构、索引、任务 JSON 结构和启动迁移
+- [API 参考](docs/api.md)：登录、任务、评分、记录、适配预设和管理接口
+- [实现说明](docs/implementation-notes.md)：整体设计、适配器契约和状态机
+
 ## 快速开始
 
 需要 Node.js 22+ 和 pnpm。仓库是一个 pnpm workspace（server、extension、e2e、tools），根目录一个 `pnpm-lock.yaml`。根 `package.json` 里锁定了 pnpm 版本，执行 `corepack enable` 后会自动用对的版本。
