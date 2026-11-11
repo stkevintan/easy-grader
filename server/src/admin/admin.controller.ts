@@ -50,10 +50,11 @@ class UpdateCodeDto {
 }
 
 class CreateInvitesDto {
-  @Type(() => Number) @IsInt() @Min(1) @Max(500) count!: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) count?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100_000) maxUses?: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(1_000_000) credits!: number;
   @Type(() => Number) @IsInt() @Min(1) unitId!: number;
-  @IsOptional() @IsDateString() expiresAt?: string;
+  @IsDateString() expiresAt!: string;
   @IsOptional() @IsString() @MaxLength(200) note?: string;
 }
 
@@ -263,9 +264,9 @@ export class AdminController {
 
   @Post('invites')
   async createInvites(@CurrentUser() me: AuthUser, @Body() dto: CreateInvitesDto) {
-    const expiresAt = dto.expiresAt ? new Date(dto.expiresAt) : null;
-    if (expiresAt && expiresAt < new Date()) throw new BadRequestException('过期时间必须在未来');
-    return { tokens: await this.invites.create(dto.unitId, me.id, dto.count, dto.maxUses ?? 1, expiresAt, dto.note ?? '') };
+    const expiresAt = new Date(dto.expiresAt);
+    if (expiresAt < new Date()) throw new BadRequestException('过期时间必须在未来');
+    return { tokens: await this.invites.create(dto.unitId, me.id, dto.count ?? 1, dto.maxUses ?? 10, dto.credits, expiresAt, dto.note ?? '') };
   }
 
   @Patch('invites/:id')

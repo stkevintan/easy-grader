@@ -14,13 +14,13 @@ export class InviteService {
     @InjectRepository(ManagementUnit) private readonly units: Repository<ManagementUnit>,
   ) {}
 
-  async create(unitId: number, createdBy: number, count: number, maxUses: number, expiresAt: Date | null, note: string) {
+  async create(unitId: number, createdBy: number, count: number, maxUses: number, credits: number, expiresAt: Date, note: string) {
     if (!(await this.units.existsBy({ id: unitId, enabled: true }))) throw new BadRequestException('管理单元不存在或已停用');
     const result: string[] = [];
     while (result.length < count) {
       const token = makeToken();
       try {
-        await this.tokens.insert({ tokenHash: hashToken(token), unitId, maxUses, expiresAt, note: note.slice(0, 200), createdBy });
+        await this.tokens.insert({ tokenHash: hashToken(token), unitId, credits, maxUses, expiresAt, note: note.slice(0, 200), createdBy });
         result.push(token);
       } catch (error) {
         const code = (error as { code?: string }).code;
@@ -58,6 +58,6 @@ export class InviteService {
       .where('id = :id AND disabled = 0 AND usedCount < maxUses', { id: row.id })
       .execute();
     if (!result.affected) throw new BadRequestException('邀请令牌已用完');
-    return row.unitId;
+    return { unitId: row.unitId, credits: row.credits };
   }
 }

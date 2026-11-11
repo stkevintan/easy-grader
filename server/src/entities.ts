@@ -83,7 +83,8 @@ export class InviteToken {
   @PrimaryGeneratedColumn() id!: number;
   @Column({ type: 'varchar', length: 64 }) tokenHash!: string;
   @Column({ type: 'integer' }) unitId!: number;
-  @Column({ type: 'integer', default: 1 }) maxUses!: number;
+  @Column({ type: 'integer', default: 0 }) credits!: number;
+  @Column({ type: 'integer', default: 10 }) maxUses!: number;
   @Column({ type: 'integer', default: 0 }) usedCount!: number;
   @Column({ type: 'datetime', nullable: true }) expiresAt!: Date | null;
   @Column({ type: 'boolean', default: false }) disabled!: boolean;

@@ -468,14 +468,24 @@ function invitesPage() {
           title: '生成单元邀请令牌',
           fields: [
             { name: 'unitId', label: '管理单元', type: 'select', options: units.map((u) => [String(u.id), u.name]) },
-            { name: 'count', label: '生成数量', type: 'number', min: 1, max: 500, value: 10, required: true },
-            { name: 'maxUses', label: '每个令牌可注册人数', type: 'number', min: 1, value: 1 },
-            { name: 'expiresAt', label: '过期日期（可选）', type: 'date' },
+            { name: 'count', label: '生成数量', type: 'number', min: 1, max: 500, value: 1, required: true },
+            { name: 'maxUses', label: '每个令牌可注册人数', type: 'number', min: 1, max: 100000, value: 10, required: true },
+            { name: 'credits', label: '每个账号默认额度', type: 'number', min: 0, max: 1000000, value: 20, required: true },
+            { name: 'expiresAt', label: '过期日期', type: 'date', required: true, value: new Date(Date.now() + 7 * 86400_000).toISOString().slice(0, 10) },
             { name: 'note', label: '备注', maxlength: 200 },
           ],
           submitText: '生成',
           onSubmit: async (v) => {
-            const r = await api('POST', '/api/admin/invites', { unitId: Number(v.unitId), count: Number(v.count), maxUses: Number(v.maxUses) || 1, expiresAt: v.expiresAt ? new Date(`${v.expiresAt}T23:59:59`).toISOString() : undefined, note: v.note || undefined });
+            const count = Number(v.count);
+            const maxUses = Number(v.maxUses);
+            const credits = Number(v.credits);
+            if (!Number.isInteger(count) || count < 1 || count > 500) throw new Error('生成数量必须是 1-500 的整数');
+            if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > 100000) throw new Error('每个令牌可注册人数必须是 1-100000 的整数');
+            if (!Number.isInteger(credits) || credits < 0 || credits > 1000000) throw new Error('默认额度必须是 0-1000000 的整数');
+            if (!v.expiresAt) throw new Error('请选择过期日期');
+            const expiry = new Date(`${v.expiresAt}T23:59:59`);
+            if (Number.isNaN(expiry.getTime()) || expiry <= new Date()) throw new Error('过期日期必须晚于当前时间');
+            const r = await api('POST', '/api/admin/invites', { unitId: Number(v.unitId), count, maxUses, credits, expiresAt: expiry.toISOString(), note: v.note || undefined });
             refresh();
             setTimeout(() => openDialog({ title: `已生成 ${r.tokens.length} 个邀请令牌`, fields: [{ name: 'tokens', label: '复制后分发', type: 'textarea', value: r.tokens.join('\n'), readonly: true }], extra: h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(r.tokens.join('\n')).then(() => toast('已复制')) }, '复制全部') }), 0);
           },

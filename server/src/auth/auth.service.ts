@@ -85,7 +85,7 @@ export class AuthService implements OnApplicationBootstrap {
     if (await this.users.existsBy({ username })) throw new ConflictException('用户名已被占用');
     const passwordHash = await hashPassword(password);
     return this.ds.transaction(async (manager) => {
-      const unitId = await this.invites.consume(inviteToken, manager);
+      const invite = await this.invites.consume(inviteToken, manager);
       const users = manager.getRepository(User);
       let user = users.create({ username, passwordHash, role: 'user', credits: 0, lastLoginAt: new Date() });
       try {
@@ -93,10 +93,10 @@ export class AuthService implements OnApplicationBootstrap {
       } catch {
         throw new ConflictException('用户名已被占用');
       }
-      if (this.cfg.initialCredits > 0) {
-        user.credits = this.billing.adjust(user.id, this.cfg.initialCredits, 'register', null, '注册赠送');
+      if (invite.credits > 0) {
+        user.credits = this.billing.adjust(user.id, invite.credits, 'register', null, '邀请注册赠送');
       }
-      await manager.getRepository(UnitMembership).save(manager.getRepository(UnitMembership).create({ unitId, userId: user.id, role: 'grader' }));
+      await manager.getRepository(UnitMembership).save(manager.getRepository(UnitMembership).create({ unitId: invite.unitId, userId: user.id, role: 'grader' }));
       return this.issue(user);
     });
   }
