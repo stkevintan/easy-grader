@@ -6,6 +6,7 @@
 import type { AdapterConfig } from '../../shared/adapter-config';
 import type { GradingInfo, TaskInfo } from '../../shared/protocol';
 import { bg } from '../../shared/protocol';
+import { signal } from '@preact/signals';
 import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from '../adapter';
 import { captureAnswer } from '../capture';
 import {
@@ -247,7 +248,7 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
 
 // ---------- 自动连续阅卷 ----------
 
-export const isAuto = { value: false };
+export const isAuto = signal(false);
 
 export function stopAuto(msg?: string) {
   const was = isAuto.value;

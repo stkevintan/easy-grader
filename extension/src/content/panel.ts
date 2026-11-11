@@ -13,7 +13,7 @@ import { cancelPick } from './picker';
 import { PANEL_CSS } from './panel.css';
 import { PanelApp } from './panel/PanelApp';
 import {
-  init, stopAuto, maybeAutoJudge,
+  init, stopAuto, maybeAutoJudge, isAuto,
 } from './panel/controller';
 import {
   sessionCount, settings, preset, state, user, isPicking,
@@ -109,6 +109,7 @@ export class Panel {
         ? `${user.value.username} · 剩余 ${user.value.credits} 次`
         : '';
     }
+    if (this.titleEl) this.titleEl.textContent = isAuto.value ? 'Easy Grader · 自动阅卷中' : 'Easy Grader';
     // Reflect picking state on the .panel section so CSS .panel.picking works
     const panelEl = this.root?.querySelector('section');
     if (panelEl) panelEl.classList.toggle('picking', isPicking.value);
@@ -137,7 +138,7 @@ export class Panel {
       open: this.isOpen,
       view: state.value.view,
       adapted: !!preset.value,
-      auto: false,
+      auto: isAuto.value,
       count: sessionCount.value,
     };
   }
