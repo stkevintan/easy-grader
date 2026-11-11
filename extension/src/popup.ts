@@ -12,6 +12,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 let user: PublicUser | null = null;
 let tab: chrome.tabs.Tab | undefined;
+let authMode: 'login' | 'register' = 'login';
 
 /** 当前标签页能否注入：只处理 http(s) 页面 */
 const tabOrigin = () => {
@@ -105,6 +106,16 @@ function enableSite() {
   });
 }
 
+function setAuthMode(mode: 'login' | 'register') {
+  authMode = mode;
+  const registering = mode === 'register';
+  show('invite-field', registering);
+  $<HTMLInputElement>('invite-token').required = registering;
+  $('login-btn').textContent = registering ? '注册' : '登录';
+  $('register-btn').textContent = registering ? '返回登录' : '注册账号';
+  $('login-form').setAttribute('aria-label', registering ? '注册账号' : '登录');
+}
+
 async function auth(cmd: 'auth.login' | 'auth.register') {
   const username = $<HTMLInputElement>('username').value.trim();
   const password = $<HTMLInputElement>('password').value;
@@ -181,7 +192,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     e.preventDefault();
     void auth('auth.login');
   });
-  $('register-btn').addEventListener('click', () => auth('auth.register'));
+  $('register-btn').addEventListener('click', () => {
+    if (authMode === 'login') setAuthMode('register');
+    else setAuthMode('login');
+  });
+  setAuthMode('login');
   $('logout').addEventListener('click', async () => {
     await bg({ cmd: 'auth.logout' });
     await renderAccount();
