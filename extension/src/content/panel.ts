@@ -10,7 +10,7 @@
  * 自动连续模式需手动开启并二次确认；遇到低置信度、写分校验失败、换卷超时都会自动暂停。
  */
 import type { AdapterConfig } from '../shared/adapter-config';
-import type { GradingTask, JudgeResult, Preset, PublicUser, Settings } from '../shared/protocol';
+import type { GradingInfo, Preset, PublicUser, Settings, TaskInfo, TaskInput } from '../shared/protocol';
 import { bg } from '../shared/protocol';
 import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from './adapter';
 import { captureAnswer } from './capture';
@@ -32,8 +32,8 @@ export class Panel {
   private preset: Preset | null = null;
   private config: AdapterConfig | null = null;
   private draft: AdapterConfig = emptyConfig();
-  private task: GradingTask | null = null;
-  private result: JudgeResult | null = null;
+  private task: TaskInfo | null = null;
+  private result: GradingInfo | null = null;
   private notice: { kind: 'info' | 'ok' | 'warn' | 'error'; text: string } | null = null;
   private auto = false;
   private abort: AbortController | null = null;
@@ -129,11 +129,11 @@ export class Panel {
     const info = readPaperInfo(this.config);
     if (!info.examTitle || !info.questionNo) return;
     try {
-      const r = await bg<{ task: GradingTask | null }>({
+      const r = await bg<{ task: TaskInfo | null }>({
         cmd: 'task.lookup',
         platformHost: location.host,
-        examTitle: info.examTitle,
-        questionNo: info.questionNo,
+        exam: info.examTitle,
+        q_index: info.questionNo,
       });
       if (r.task) {
         this.task = r.task;
@@ -316,21 +316,22 @@ export class Panel {
   private renderTask(s: PanelShell) {
     const info = this.config ? readPaperInfo(this.config) : { examTitle: '', questionNo: '', maxScore: null };
     const t = this.task;
+    const content = t?.question.content ?? {};
     const field = (id: string, label: string, el: HTMLElement) => [h('label', { for: id }, label), el];
     const subject = h('select', { id: 'eg-subject' }, ...this.subjects.map((x) => h('option', { value: x }, x)));
-    subject.value = t?.subject ?? this.subjects[0];
-    const exam = h('input', { id: 'eg-exam', value: t?.examTitle ?? info.examTitle, required: true, maxlength: 200 });
-    const qno = h('input', { id: 'eg-qno', value: t?.questionNo ?? info.questionNo, required: true, maxlength: 100 });
-    const max = h('input', { id: 'eg-max', type: 'number', min: 0.5, max: 200, step: 0.5, value: t?.maxScore ?? info.maxScore ?? '', required: true });
+    subject.value = t?.exam.subject ?? this.subjects[0];
+    const exam = h('input', { id: 'eg-exam', value: t?.exam.exam ?? info.examTitle, required: true, maxlength: 200 });
+    const qno = h('input', { id: 'eg-qno', value: t?.exam.q_index ?? info.questionNo, required: true, maxlength: 100 });
+    const max = h('input', { id: 'eg-max', type: 'number', min: 0.5, max: 200, step: 0.5, value: content.score ?? info.maxScore ?? '', required: true });
     const step = h('select', { id: 'eg-step' }, ...[1, 0.5, 2, 5].map((x) => h('option', { value: x }, `${x} 分`)));
     step.value = String(t?.scoreStep ?? 1);
-    const qtype = h('input', { id: 'eg-qtype', value: t?.questionType ?? '', placeholder: '如：阅读理解 / 作文 / 古诗文翻译', maxlength: 50 });
+    const qtype = h('input', { id: 'eg-qtype', value: t?.question.type ?? '', placeholder: '如：阅读理解 / 作文 / 古诗文翻译', maxlength: 50 });
     const qtext = h('textarea', { id: 'eg-qtext', maxlength: 8000, placeholder: '题干（可选，建议填写）' });
-    qtext.value = t?.questionText ?? '';
+    qtext.value = String(content.title ?? '');
     const ref = h('textarea', { id: 'eg-ref', maxlength: 8000, placeholder: '参考答案' });
-    ref.value = t?.referenceAnswer ?? '';
+    ref.value = String(content.reference ?? '');
     const rubric = h('textarea', { id: 'eg-rubric', maxlength: 8000, placeholder: '评分细则，例如：答出“思念外婆”得 2 分；答出“怀念乡村生活”得 2 分……' });
-    rubric.value = t?.rubric ?? '';
+    rubric.value = String(t?.majorInput.content ?? content.command ?? '');
 
     s.body.append(
       h('h4', {}, '题目设置'),
@@ -352,21 +353,32 @@ export class Panel {
           if (!(maxScore > 0)) return this.fail('请填写满分');
           if (!ref.value.trim() && !rubric.value.trim()) return this.fail('参考答案和评分细则至少填一项');
           try {
-            this.task = await bg<GradingTask>({
-              cmd: 'task.upsert',
-              task: {
-                platformHost: location.host,
-                examTitle: exam.value.trim(),
-                questionNo: qno.value.trim(),
-                subject: subject.value,
-                questionType: qtype.value.trim(),
-                maxScore,
-                scoreStep: Number(step.value),
-                questionText: qtext.value.trim(),
-                referenceAnswer: ref.value.trim(),
-                rubric: rubric.value.trim(),
+            // 表单只覆盖它展示的字段；resource/target/keywords/extra 等要保留
+            const prevQuestion = this.task?.question;
+            const prevMajor = this.task?.majorInput;
+            const majorKey = prevMajor?.key ?? 'command';
+            const input: TaskInput = {
+              platformHost: location.host,
+              scoreStep: Number(step.value),
+              exam: { exam: exam.value.trim(), subject: subject.value, q_index: qno.value.trim() },
+              question: {
+                type: qtype.value.trim(),
+                content: {
+                  ...(prevQuestion?.content ?? {}),
+                  score: maxScore,
+                  title: qtext.value.trim(),
+                  reference: ref.value.trim(),
+                  ...(majorKey === 'command' ? { command: rubric.value.trim() } : {}),
+                },
+                ...(prevQuestion?.extra ? { extra: prevQuestion.extra } : {}),
               },
-            });
+              majorInput: {
+                key: majorKey,
+                name: prevMajor?.name ?? '评分细则',
+                content: rubric.value.trim(),
+              },
+            };
+            this.task = await bg<TaskInfo>({ cmd: 'task.upsert', task: input });
             // 评分标准变了，当前这份需要重新判
             this.lastFingerprint = '';
             this.autoAttempted = '';
@@ -400,8 +412,8 @@ export class Panel {
     s.foot.classList.add('stack');
     s.body.append(
       h('dl', { class: 'kv' },
-        h('dt', {}, '考试'), h('dd', { title: t.examTitle }, t.examTitle),
-        h('dt', {}, '题号'), h('dd', {}, `${t.questionNo}（${t.subject}，满分 ${fmt(t.maxScore)}）`),
+        h('dt', {}, '考试'), h('dd', { title: t.exam.exam }, t.exam.exam),
+        h('dt', {}, '题号'), h('dd', {}, `${t.exam.q_index}（${t.exam.subject}，满分 ${fmt(Number(t.question.content.score ?? 0))}）`),
         h('dt', {}, '本次'), h('dd', {}, `已阅 ${this.sessionCount} 份`),
       ),
       h('p', { class: 'muted' }, this.settings.autoJudge
@@ -445,9 +457,9 @@ export class Panel {
         ? h('p', { class: 'muted' }, `多次评分：${r.samples.join(' / ')}${r.scoreSpread ? '（不一致，请重点核对）' : ''}`)
         : null,
       r.cached ? h('p', { class: 'muted' }, '这份答卷之前评过，直接使用上次结果（未扣次数）') : null,
-      r.reasons.length ? h('ul', { class: 'reasons' }, ...r.reasons.map((x) => h('li', {}, x))) : null,
+      r.reasons.length ? h('ul', { class: 'reasons' }, ...r.reasons.map((x) => h('li', {}, x))) : r.reason ? h('p', {}, r.reason) : null,
       r.comment ? h('p', {}, r.comment) : null,
-      r.ocrText ? h('details', {}, h('summary', {}, '识别出的答卷文字'), h('pre', { class: 'ocr' }, r.ocrText)) : null,
+      r.ocr ? h('details', {}, h('summary', {}, '识别出的答卷文字'), h('pre', { class: 'ocr' }, r.ocr)) : null,
     ].filter((x) => x !== null) as HTMLElement[]);
     const commit = async (andNext: boolean) => {
       const v = Number(scoreInput.value);
@@ -464,21 +476,21 @@ export class Panel {
   }
 
   /** 读答卷 → 请求评分；返回 null 表示失败（已显示错误） */
-  private async judgeOnce(force = false, preCaptured?: string): Promise<JudgeResult | null> {
+  private async judgeOnce(force = false, preCaptured?: string): Promise<GradingInfo | null> {
     if (!this.config || !this.task) return null;
     this.notice = null;
     this.go('judging');
     try {
       // 题号/考试变了说明老师切到了别的题，不能沿用当前任务的评分标准
       const info = readPaperInfo(this.config);
-      if (info.questionNo && info.questionNo !== this.task.questionNo && !this.config.questionNo.fixed) {
-        throw new AdapterError(`页面题号变成了「${info.questionNo}」，与当前任务「${this.task.questionNo}」不一致，请到「题目设置」确认`);
+      if (info.questionNo && info.questionNo !== this.task.exam.q_index && !this.config.questionNo.fixed) {
+        throw new AdapterError(`页面题号变成了「${info.questionNo}」，与当前任务「${this.task.exam.q_index}」不一致，请到「题目设置」确认`);
       }
       const image = preCaptured ?? (await captureAnswer(this.config.pics));
       this.lastImage = image;
       // 抓完图再记指纹：图片还在加载、画布正被清空时读到的是过渡状态，会让写分校验误判
       this.lastFingerprint = fingerprint(this.config);
-      const r = await bg<JudgeResult>({ cmd: 'judge.run', taskId: this.task.id, image, force });
+      const r = await bg<GradingInfo>({ cmd: 'judge.run', taskId: this.task.taskId, image, force });
       if (this.view !== 'judging') return null; // 期间被取消
       this.result = r;
       if (this.user) this.user.credits = r.balance;
@@ -523,7 +535,7 @@ export class Panel {
       setScore(cfg, score, r.maxScore);
       await new Promise((res) => setTimeout(res, 120));
       if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
-      await bg({ cmd: 'record.confirm', recordId: r.recordId, finalScore: score, autoSubmitted }).catch(() => undefined);
+      await bg({ cmd: 'record.confirm', gradingId: r.gradingId, modifiedScore: score, isAuto: autoSubmitted }).catch(() => undefined);
       if (!andNext) {
         this.setNotice('ok', `已写入 ${fmt(score)} 分，请在平台上检查后手动提交`);
         this.go('ready');

@@ -129,15 +129,66 @@ describe('Easy Grader server (e2e)', () => {
   let taskId: number;
 
   it('任务按 平台+考试+题号 upsert，可 lookup', async () => {
-    const body = { platformHost: 'localhost', examTitle: '期中考试', questionNo: '17', subject: '语文', maxScore: 6, questionText: '概括文章内容', rubric: '每点 2 分' };
+    const body = {
+      platformHost: 'localhost',
+      exam: { exam: '期中考试', subject: '语文', q_index: '17' },
+      question: {
+        type: '阅读理解',
+        content: { score: 6, title: '概括文章内容', command: '每点 2 分' },
+      },
+    };
     const a = await http.put('/api/tasks').set(auth(userToken)).send(body).expect(200);
-    const b = await http.put('/api/tasks').set(auth(userToken)).send({ ...body, maxScore: 8 }).expect(200);
-    expect(b.body.id).toBe(a.body.id);
-    expect(b.body.maxScore).toBe(8);
-    taskId = a.body.id;
-    const l = await http.get('/api/tasks/lookup').query({ platformHost: 'localhost', examTitle: '期中考试', questionNo: '17' }).set(auth(userToken)).expect(200);
-    expect(l.body.task.id).toBe(taskId);
-    await http.put('/api/tasks').set(auth(userToken)).send({ ...body, subject: '火星语' }).expect(400);
+    const b = await http
+      .put('/api/tasks')
+      .set(auth(userToken))
+      .send({ ...body, question: { ...body.question, content: { ...body.question.content, score: 8 } } })
+      .expect(200);
+    expect(b.body.taskId).toBe(a.body.taskId);
+    expect(b.body.judgeId).toMatch(/^j_/);
+    expect(b.body.question.content.score).toBe(8);
+    expect(b.body.majorInput).toMatchObject({ key: 'command', name: '评分细则', content: '每点 2 分' });
+    taskId = a.body.taskId;
+    const l = await http
+      .get('/api/tasks/lookup')
+      .query({ platformHost: 'localhost', exam: '期中考试', q_index: '17' })
+      .set(auth(userToken))
+      .expect(200);
+    expect(l.body.task.taskId).toBe(taskId);
+    // exam / question 是必填对象，缺了要 400 而不是 500
+    await http.put('/api/tasks').set(auth(userToken)).send({ platformHost: 'localhost' }).expect(400);
+    await http
+      .put('/api/tasks')
+      .set(auth(userToken))
+      .send({ platformHost: 'localhost', exam: body.exam })
+      .expect(400);
+    // majorInput 指向 reference 时不能把 command 覆盖掉
+    const m = await http
+      .put('/api/tasks')
+      .set(auth(userToken))
+      .send({
+        platformHost: 'localhost',
+        exam: { exam: '月考', subject: '语文', q_index: 'major' },
+        question: {
+          type: '阅读理解',
+          content: { score: 6, command: '原评分细则', reference: '参考答案文本' },
+        },
+        majorInput: { key: 'reference', name: '参考答案', content: '参考答案文本' },
+      })
+      .expect(200);
+    expect(m.body.question.content.command).toBe('原评分细则');
+    expect(m.body.majorInput.content).toBe('参考答案文本');
+    await http.delete(`/api/tasks/${m.body.taskId}`).set(auth(userToken)).expect(200);
+    // 旧版的扁平字段不再接受
+    await http
+      .put('/api/tasks')
+      .set(auth(userToken))
+      .send({ platformHost: 'localhost', examTitle: '月考', questionNo: '3', subject: '语文', maxScore: 5 })
+      .expect(400);
+    await http
+      .put('/api/tasks')
+      .set(auth(userToken))
+      .send({ ...body, exam: { ...body.exam, subject: '火星语' } })
+      .expect(400);
   });
 
   it('评分扣 1 次；同一张图重复请求走缓存不扣费；分数按步长取整且不超满分', async () => {
@@ -150,7 +201,7 @@ describe('Easy Grader server (e2e)', () => {
     expect(Number.isInteger(r1.body.score)).toBe(true);
     const r2 = await http.post('/api/judge').set(auth(userToken)).send({ taskId, image: img }).expect(200);
     expect(r2.body.cached).toBe(true);
-    expect(r2.body.recordId).toBe(r1.body.recordId);
+    expect(r2.body.gradingId).toBe(r1.body.gradingId);
     expect(r2.body.balance).toBe(2);
   });
 
@@ -158,7 +209,7 @@ describe('Easy Grader server (e2e)', () => {
     const img = fakePng('b');
     const rs = await Promise.all([1, 2, 3].map(() => http.post('/api/judge').set(auth(userToken)).send({ taskId, image: img })));
     rs.forEach((r) => expect(r.status).toBe(200));
-    expect(new Set(rs.map((r) => r.body.recordId)).size).toBe(1);
+    expect(new Set(rs.map((r) => r.body.gradingId)).size).toBe(1);
     const me = await http.get('/api/auth/me').set(auth(userToken)).expect(200);
     expect(me.body.credits).toBe(1);
   });
@@ -179,11 +230,13 @@ describe('Easy Grader server (e2e)', () => {
 
   it('确认分数；超过满分被拒', async () => {
     const recs = await http.get('/api/records').query({ taskId }).set(auth(userToken)).expect(200);
-    const id = recs.body.items.find((r: any) => r.status === 'done').id;
-    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ finalScore: 99 }).expect(400);
-    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ finalScore: 5, autoSubmitted: false }).expect(200);
+    const id = recs.body.items.find((r: any) => r.status === 'done').gradingId;
+    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: 99 }).expect(400);
+    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: null }).expect(400);
+    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({}).expect(400);
+    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: 5, isAuto: false }).expect(200);
     const tasks = await http.get('/api/tasks').set(auth(userToken)).expect(200);
-    expect(tasks.body[0]).toMatchObject({ judged: 3, confirmed: 1 });
+    expect(tasks.body.find((t: any) => t.taskId === taskId)).toMatchObject({ judged: 3, confirmed: 1 });
   });
 
   let code: string;
@@ -289,8 +342,8 @@ describe('模型失败时退还次数', () => {
     const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'user1', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
-    const t = await http.put('/api/tasks').set(h).send({ platformHost: 'x', examTitle: 'e', questionNo: '1', subject: '语文', maxScore: 5 }).expect(200);
-    const r = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('z') }).expect(502);
+    const t = await http.put('/api/tasks').set(h).send({ platformHost: 'x', exam: { exam: 'e', subject: '语文', q_index: '1' }, question: { type: '其他', content: { score: 5 } } }).expect(200);
+    const r = await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('z') }).expect(502);
     expect(r.body.message).toContain('不扣次数');
     const me = await http.get('/api/auth/me').set(h).expect(200);
     expect(me.body.credits).toBe(20);
@@ -383,14 +436,19 @@ describe('OpenAI 兼容模型接入', () => {
     const t = await http
       .put('/api/tasks')
       .set(h)
-      .send({ platformHost: 'x', examTitle: '期中', questionNo: '17', subject: '语文', maxScore: 6, scoreStep: 0.5, referenceAnswer: '思念外婆', rubric: '每点 3 分' })
+      .send({
+        platformHost: 'x',
+        exam: { exam: '期中', subject: '语文', q_index: '17' },
+        question: { type: '阅读理解', content: { score: 6, reference: '思念外婆', command: '每点 3 分' } },
+        scoreStep: 0.5,
+      })
       .expect(200);
 
     reply = '好的，评分如下：\n```json\n{"score": 4.3, "confidence": 0.82, "ocr_text": "作者思念外婆", "points": [{"rubric": "①", "level": "full", "delta": 2, "quote": "思念外婆"}, {"rubric": "②", "level": "full", "delta": 2, "quote": "作者思念"}], "reasons": ["答出思念外婆 +3", "未答乡村生活 -2"], "comment": "要点不全"}\n```';
     const img = fakePng('m');
-    const r = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: img }).expect(200);
+    const r = await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: img }).expect(200);
     // 分数由逐点 delta 相加得到（2 + 2），不再采用模型自己写的 score
-    expect(r.body).toMatchObject({ score: 4, confidence: 0.82, ocrText: '作者思念外婆', model: 'qwen-vl-test', balance: 19 });
+    expect(r.body).toMatchObject({ score: 4, confidence: 0.82, ocr: '作者思念外婆', model: 'qwen-vl-test', balance: 19 });
     expect(r.body.reasons).toHaveLength(2);
     // 三次采样结果一致，面板不需要提示不一致
     expect(r.body.samples).toEqual([4, 4, 4]);
@@ -438,7 +496,7 @@ describe('OpenAI 兼容模型接入', () => {
     // 上游 500：可重试，默认重试 2 次（共 3 次请求）后返回 503，退还次数
     status = 500;
     const before = seen.length;
-    await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('n') }).expect(503);
+    await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('n') }).expect(503);
     expect(seen.length - before).toBe(3);
     const me = await http.get('/api/auth/me').set(h).expect(200);
     expect(me.body.credits).toBe(19);
@@ -447,14 +505,14 @@ describe('OpenAI 兼容模型接入', () => {
     // 超时也可重试：上游一直不响应，尝试 3 次后返回 503，退还次数
     delayMs = 1000;
     const beforeTimeout = seen.length;
-    await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('t') }).expect(503);
+    await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('t') }).expect(503);
     expect(seen.length - beforeTimeout).toBe(3);
     delayMs = 0;
     expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(19);
 
     // 模型乱回：502，退还次数
     reply = '我无法判断这份答卷';
-    await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('o') }).expect(502);
+    await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('o') }).expect(502);
     expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(19);
 
     // health 显示真实模型名
@@ -471,18 +529,22 @@ describe('OpenAI 兼容模型接入', () => {
     const t = await http
       .put('/api/tasks')
       .set(h)
-      .send({ platformHost: 'gold.example', examTitle: '月考', questionNo: '9', subject: '语文', maxScore: 6, rubric: '答出三点得满分' })
+      .send({
+        platformHost: 'gold.example',
+        exam: { exam: '月考', subject: '语文', q_index: '9' },
+        question: { type: '其他', content: { score: 6, command: '答出三点得满分' } },
+      })
       .expect(200);
 
     ocrReply = '答案甲：强化关键核心技术攻关';
     reply = '```json\n{"score": 3, "confidence": 0.8, "ocr_text": "答案甲：强化关键核心技术攻关", "reasons": [], "comment": ""}\n```';
-    const a = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('ga') }).expect(200);
-    await http.post(`/api/records/${a.body.recordId}/confirm`).set(h).send({ finalScore: 5, autoSubmitted: false }).expect(200);
+    const a = await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('ga') }).expect(200);
+    await http.post(`/api/records/${a.body.gradingId}/confirm`).set(h).send({ modifiedScore: 5, isAuto: false }).expect(200);
 
     // 下一条评分的提示词里应该带上「答案甲 → 5 分」
     ocrReply = '答案乙：种业振兴行动';
     reply = '```json\n{"score": 2, "confidence": 0.8, "ocr_text": "答案乙", "reasons": [], "comment": ""}\n```';
-    const b = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('gb') }).expect(200);
+    const b = await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('gb') }).expect(200);
     const promptB = seen[seen.length - 1].body.messages[0].content[0].text as string;
     expect(promptB).toContain('【老师已确认的评分示例】');
     expect(promptB).toContain('示例1（5 分）：答案甲');
@@ -490,20 +552,20 @@ describe('OpenAI 兼容模型接入', () => {
     expect((promptB.match(/答案乙/g) ?? []).length).toBe(1);
 
     // 自动提交的记录 finalScore 只是模型自己的分，不能当示例
-    await http.post(`/api/records/${b.body.recordId}/confirm`).set(h).send({ finalScore: 1, autoSubmitted: true }).expect(200);
+    await http.post(`/api/records/${b.body.gradingId}/confirm`).set(h).send({ modifiedScore: 1, isAuto: true }).expect(200);
     ocrReply = '答案丙：数字农业建设';
     reply = '```json\n{"score": 1, "confidence": 0.8, "ocr_text": "答案丙", "reasons": [], "comment": ""}\n```';
-    await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('gc') }).expect(200);
+    await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('gc') }).expect(200);
     const promptC = seen[seen.length - 1].body.messages[0].content[0].text as string;
     expect(promptC).toContain('示例1（5 分）：答案甲');
     expect(promptC).not.toContain('答案乙');
 
     // trace 里记下用了哪些示例，便于离线评测时排除泄漏样本
     const jsonFiles = readdirSync(traceDir).filter((f) => f.endsWith('.json'));
-    const traceB = jsonFiles
-      .map((f) => JSON.parse(readFileSync(join(traceDir, f), 'utf8')))
-      .find((x) => x.recordId === b.body.recordId);
-    expect(traceB.goldExamples).toEqual([{ recordId: a.body.recordId, score: 5 }]);
+    const traces = jsonFiles.map((f) => JSON.parse(readFileSync(join(traceDir, f), 'utf8')));
+    const traceA = traces.find((x) => x.verdict?.ocrText?.includes('答案甲'));
+    const traceB = traces.find((x) => x.verdict?.ocrText?.includes('答案乙'));
+    expect(traceB.goldExamples).toEqual([{ recordId: traceA.recordId, score: 5 }]);
   });
 
   it('空白答卷：只调用一次转录，直接 0 分', async () => {
@@ -516,14 +578,18 @@ describe('OpenAI 兼容模型接入', () => {
     const t = await http
       .put('/api/tasks')
       .set(h)
-      .send({ platformHost: 'blank.example', examTitle: '月考', questionNo: '2', subject: '语文', maxScore: 6, rubric: '每点 2 分' })
+      .send({
+        platformHost: 'blank.example',
+        exam: { exam: '月考', subject: '语文', q_index: '2' },
+        question: { type: '其他', content: { score: 6, command: '每点 2 分' } },
+      })
       .expect(200);
 
     ocrReply = '（空白）';
     const before = seen.length;
-    const r = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('blank') }).expect(200);
+    const r = await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('blank') }).expect(200);
     expect(seen.length - before).toBe(1); // 识别为空白，不再调用评分
-    expect(r.body).toMatchObject({ score: 0, confidence: 0.2, ocrText: '（空白）' });
+    expect(r.body).toMatchObject({ score: 0, confidence: 0.2, ocr: '（空白）' });
     expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(19);
     ocrReply = '作者思念外婆';
   });
@@ -597,11 +663,31 @@ describe('纯函数', () => {
       questionText: '',
       referenceAnswer: '',
       rubric: '①强化关键核心技术自主攻关。如杂交水稻的研发实践。',
+      question: {
+        type: '阅读理解',
+        extra: '结合材料作答。',
+        content: {
+          score: 6,
+          title: '概括文章内容',
+          reference: '参考答案文本',
+          command: '①强化关键核心技术自主攻关。如杂交水稻的研发实践。',
+          resource: '材料一：杂交水稻研发历程。',
+          target: '写作目标文本',
+          target_command: '不少于 800 字。',
+          keywords: '杂交水稻；粮食安全',
+        },
+      },
+      majorInput: { key: 'command', name: '评分细则', content: '①强化关键核心技术自主攻关。如杂交水稻的研发实践。' },
     } as unknown as Parameters<typeof buildPrompt>[0];
     const prompt = buildPrompt(task, [], '①杂交水稻育种');
     expect(prompt).toContain('【评分标准的读法】');
     expect(prompt).toContain('要点句');
     expect(prompt).toContain('典型事例');
+    expect(prompt).toContain('【材料】\n材料一：杂交水稻研发历程。');
+    expect(prompt).toContain('【题目/写作目标】\n写作目标文本');
+    expect(prompt).toContain('【题目要求】\n不少于 800 字。');
+    expect(prompt).toContain('【关键词】\n杂交水稻；粮食安全');
+    expect(prompt).toContain('【补充说明】\n结合材料作答。');
   });
 
   it('逐点判定：引用必须出现在答卷文字里，分数由 delta 汇总', () => {

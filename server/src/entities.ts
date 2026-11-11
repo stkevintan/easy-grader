@@ -7,6 +7,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import type { AdapterConfig } from './adapters/adapter-config';
+import type { ExamInfo, MajorInput, QuestionInfo } from './judge/task-info';
 
 export type Role = 'user' | 'admin';
 export type UnitRole = 'owner' | 'manager' | 'grader' | 'viewer';
@@ -109,6 +110,15 @@ export class GradingTask {
   @PrimaryGeneratedColumn() id!: number;
   @Column({ type: 'integer' }) userId!: number;
   @Column({ type: 'varchar', default: '' }) platformHost!: string;
+  /** 服务端签发的评分标识，对应原版 createTask 返回的 judge_id */
+  @Index({ unique: true }) @Column({ type: 'varchar', length: 40, nullable: true }) judgeId!: string | null;
+  /** 原版 taskInfo.exam；旧数据为 null，由 TaskInfoService 在启动时回填 */
+  @Column({ type: 'simple-json', nullable: true }) exam!: ExamInfo | null;
+  /** 原版 taskInfo.question */
+  @Column({ type: 'simple-json', nullable: true }) question!: QuestionInfo | null;
+  /** 原版 taskInfo.majorInput */
+  @Column({ type: 'simple-json', nullable: true }) majorInput!: MajorInput | null;
+  /** 以下扁平列是索引和模型提示词用的冗余，JSON 列是任务结构的来源 */
   @Column({ type: 'varchar', default: '' }) examTitle!: string;
   @Column({ type: 'varchar', default: '' }) questionNo!: string;
   @Column({ type: 'varchar', default: '语文' }) subject!: string;
@@ -130,6 +140,8 @@ export type RecordStatus = 'done' | 'failed';
 @Index(['createdAt'])
 export class JudgeRecord {
   @PrimaryGeneratedColumn() id!: number;
+  /** 对外暴露的评分标识，对应原版 judge 返回的 grading_id */
+  @Index({ unique: true }) @Column({ type: 'varchar', length: 40, nullable: true }) gradingId!: string | null;
   @Column({ type: 'integer' }) userId!: number;
   @Column({ type: 'integer' }) taskId!: number;
   @Column({ type: 'varchar', length: 64 }) imageSha256!: string;
