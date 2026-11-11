@@ -265,8 +265,9 @@ export function stopAuto(msg?: string) {
 
 export async function runAuto(settings_: { autoMinConfidence: number; autoIntervalMs: number }) {
   isAuto.value = true;
-  abortController = new AbortController();
-  const signal = abortController.signal;
+  const ctrl = new AbortController();
+  abortController = ctrl;
+  const signal = ctrl.signal;
   while (isAuto.value && !signal.aborted) {
     const started = Date.now();
     const r = await judgeOnce();
@@ -282,7 +283,8 @@ export async function runAuto(settings_: { autoMinConfidence: number; autoInterv
     if (wait > 0) await new Promise<void>((res) => setTimeout(res, wait));
   }
   isAuto.value = false;
-  abortController = null;
+  // Only clear the shared controller if it's still ours
+  if (abortController === ctrl) abortController = null;
 }
 
 export async function toggleAutoJudge() {
