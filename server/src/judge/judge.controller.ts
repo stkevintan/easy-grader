@@ -1,4 +1,16 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Put, Query } from '@nestjs/common';
+import {
+  BadRequestException,
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseIntPipe,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { ThrottleBucket } from '../common/throttler.guard';
 import { AuthUser, CurrentUser } from '../common/auth.guard';
 import { ConfirmDto, FindTaskQuery, JudgeDto, ListQuery, SUBJECTS, UpsertTaskDto } from './judge.dto';
@@ -17,7 +29,10 @@ export class JudgeController {
   /** 扩展打开一道题时，用 平台+考试+题号 找上次的配置（断点续阅） */
   @Get('tasks/lookup')
   async lookup(@CurrentUser() u: AuthUser, @Query() q: FindTaskQuery) {
-    return { task: await this.judge.findTask(u.id, q.platformHost, q.examTitle, q.questionNo) };
+    const exam = q.exam ?? q.examTitle;
+    const qIndex = q.q_index ?? q.questionNo;
+    if (!exam || !qIndex) throw new BadRequestException('缺少 exam 或 q_index');
+    return { task: await this.judge.findTask(u.id, q.platformHost, exam, qIndex) };
   }
 
   @Get('tasks')
@@ -49,8 +64,10 @@ export class JudgeController {
 
   @HttpCode(200)
   @Post('records/:id/confirm')
-  confirm(@CurrentUser() u: AuthUser, @Param('id', ParseIntPipe) id: number, @Body() dto: ConfirmDto) {
-    return this.judge.confirm(u.id, id, dto.finalScore, dto.autoSubmitted);
+  confirm(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ConfirmDto) {
+    const score = dto.modifiedScore ?? dto.finalScore;
+    if (score === undefined) throw new BadRequestException('缺少 modifiedScore');
+    return this.judge.confirm(u.id, id, score, dto.isAuto ?? dto.autoSubmitted ?? false);
   }
 
   @Get('records')

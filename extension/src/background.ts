@@ -206,14 +206,17 @@ async function handle(req: BgRequest, sender: Sender): Promise<unknown> {
         config: req.config,
       });
     case 'task.lookup':
-      return api('GET', `/api/tasks/lookup?${qs({ platformHost: req.platformHost, examTitle: req.examTitle, questionNo: req.questionNo })}`);
+      return api('GET', `/api/tasks/lookup?${qs({ platformHost: req.platformHost, exam: req.exam, q_index: req.q_index })}`);
     case 'task.upsert':
       return api('PUT', '/api/tasks', req.task);
     case 'judge.run':
       // 服务端单次模型超时 60s、默认最多重试 2 次，这里要留够 3 次尝试的时间
       return api('POST', '/api/judge', { taskId: req.taskId, image: req.image, force: req.force ?? false }, 240000);
     case 'record.confirm':
-      return api('POST', `/api/records/${req.recordId}/confirm`, { finalScore: req.finalScore, autoSubmitted: req.autoSubmitted });
+      return api('POST', `/api/records/${encodeURIComponent(req.gradingId)}/confirm`, {
+        modifiedScore: req.modifiedScore,
+        isAuto: req.isAuto,
+      });
     case 'image.fetch':
       if (!sender.tab) throw new Error('只能由页面发起');
       return fetchImage(req.url, sender.tab.url);

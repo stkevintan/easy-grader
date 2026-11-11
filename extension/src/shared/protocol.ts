@@ -28,29 +28,62 @@ export const DEFAULT_SETTINGS: Settings = {
   autoIntervalMs: 2500,
 };
 
-export interface GradingTask {
-  id: number;
-  platformHost: string;
-  examTitle: string;
-  questionNo: string;
+/** 对齐咖喱阅卷 taskInfo.exam */
+export interface ExamInfo {
+  exam: string;
   subject: string;
-  questionType: string;
-  maxScore: number;
-  scoreStep: number;
-  questionText: string;
-  referenceAnswer: string;
-  rubric: string;
+  q_index: string;
 }
 
-export interface JudgeResult {
-  recordId: number;
+export type QuestionContent = Record<string, string | number | undefined> & { score?: number };
+
+/** 对齐 taskInfo.question；不同题型在 content 里放不同字段 */
+export interface QuestionInfo {
+  type: string;
+  content: QuestionContent;
+  extra?: string;
+}
+
+/** 对齐 taskInfo.majorInput */
+export interface MajorInput {
+  key: string;
+  name: string;
+  content: string;
+}
+
+/** 服务端下发的任务结构，对齐咖喱阅卷的 taskInfo */
+export interface TaskInfo {
+  taskId: number;
+  judgeId: string;
+  platformHost: string;
+  scoreStep: number;
+  exam: ExamInfo;
+  question: QuestionInfo;
+  majorInput: MajorInput;
+}
+
+/** 新建/更新任务时提交的结构 */
+export interface TaskInput {
+  platformHost: string;
+  scoreStep?: number;
+  exam: ExamInfo;
+  question: QuestionInfo;
+  majorInput?: MajorInput;
+}
+
+/** 评分结果，对齐 judge / submitScore 的 grading_id、modified_score、is_auto */
+export interface GradingInfo {
+  gradingId: string;
   taskId: number;
   score: number;
   maxScore: number;
+  reason: string;
+  ocr: string;
+  modifiedScore: number | null;
+  isAuto: boolean;
   confidence: number;
   reasons: string[];
   comment: string;
-  ocrText: string;
   model: string;
   cached: boolean;
   balance: number;
@@ -81,10 +114,10 @@ export type BgRequest =
   | { cmd: 'meta.get' }
   | { cmd: 'adapter.resolve'; host: string; path: string }
   | { cmd: 'adapter.save'; name: string; hostPattern: string; pathPattern: string; config: AdapterConfig }
-  | { cmd: 'task.lookup'; platformHost: string; examTitle: string; questionNo: string }
-  | { cmd: 'task.upsert'; task: Omit<GradingTask, 'id'> }
+  | { cmd: 'task.lookup'; platformHost: string; exam: string; q_index: string }
+  | { cmd: 'task.upsert'; task: TaskInput }
   | { cmd: 'judge.run'; taskId: number; image: string; force?: boolean }
-  | { cmd: 'record.confirm'; recordId: number; finalScore: number; autoSubmitted: boolean }
+  | { cmd: 'record.confirm'; gradingId: string; modifiedScore: number; isAuto: boolean }
   | { cmd: 'image.fetch'; url: string }
   | { cmd: 'tab.capture' }
   | { cmd: 'site.list' }

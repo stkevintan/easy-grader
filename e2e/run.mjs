@@ -62,11 +62,30 @@ async function main() {
     console.log('  扩展 ID:', extId);
 
     step('popup：注册账号');
+    // 注册需要单元邀请令牌：先用管理员账号建一个测试单元并发一枚
+    const adminAuth = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: 'admin', password: ADMIN_PASS }),
+    }).then((r) => r.json());
+    const unit = await fetch(`${BASE}/api/admin/units`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${adminAuth.token}` },
+      body: JSON.stringify({ name: `e2e-${Date.now()}` }),
+    }).then((r) => r.json());
+    const invite = await fetch(`${BASE}/api/admin/invites`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${adminAuth.token}` },
+      body: JSON.stringify({ unitId: unit.id, count: 1, credits: 5, expiresAt: new Date(Date.now() + 86400000).toISOString() }),
+    }).then((r) => r.json());
+
     const popup = await ctx.newPage();
     await popup.goto(`chrome-extension://${extId}/popup.html`);
-    await popup.fill('#username', 'e2e_teacher');
-    await popup.fill('#password', 'password-123');
-    await popup.click('#register-btn');
+    await popup.click('#show-register');
+    await popup.fill('#register-username', 'e2e_teacher');
+    await popup.fill('#register-password', 'password-123');
+    await popup.fill('#invite-token', invite.tokens[0].token);
+    await popup.click('#register-form button[type=submit]');
     await popup.waitForSelector('#account:not([hidden])', { timeout: 5000 });
     assert.equal(await popup.textContent('#credits'), '5');
     console.log('  已登录，剩余 5 次');
@@ -136,13 +155,19 @@ async function main() {
     await waitView(p2, 'ready', 15000);
     assert.notEqual(await p2.getAttribute('.paper img.answer', 'src'), src0, '图片应切换');
     assert.match(await p2.textContent('.log'), /第 1 份：\d+ 分/);
+    // 第 1 份与输入框演示页是同一张图，会命中缓存；再阅第 2 份验证新记录
+    await panelClick(p2, '获取建议分');
+    await waitView(p2, 'result', 15000);
+    await panelClick(p2, '写入并提交');
+    await waitView(p2, 'ready', 15000);
+    assert.match(await p2.textContent('.log'), /第 2 份：\d+ 分/);
     console.log('  打分板流程通过');
 
     step('服务端：记录已确认、额度已扣');
     const login = await (await fetch(`${BASE}/api/auth/login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: 'e2e_teacher', password: 'password-123' }) })).json();
     const recs = await (await fetch(`${BASE}/api/records`, { headers: { authorization: `Bearer ${login.token}` } })).json();
     assert.equal(recs.total, 2);
-    assert.ok(recs.items.every((r) => r.finalScore !== null && r.confirmedAt), '两条记录都应已确认');
+    assert.ok(recs.items.every((r) => r.modifiedScore !== null && r.confirmedAt), '两条记录都应已确认');
     assert.equal(login.user.credits, 3);
     console.log('  2 条记录已确认，剩余 3 次');
 

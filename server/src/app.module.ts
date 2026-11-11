@@ -20,6 +20,7 @@ import { JudgeController } from './judge/judge.controller';
 import { JudgeService } from './judge/judge.service';
 import { GoldService } from './judge/gold.service';
 import { ModelService } from './judge/model.service';
+import { TaskInfoService } from './judge/task-info.service';
 import { TraceService } from './trace/trace.service';
 import { InviteService } from './invite.service';
 
@@ -63,6 +64,7 @@ export class AppModule {
         ModelService,
         JudgeService,
         GoldService,
+        TaskInfoService,
         AdaptersService,
         TraceService,
         InviteService,

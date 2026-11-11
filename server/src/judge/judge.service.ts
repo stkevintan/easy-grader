@@ -9,37 +9,28 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'node:crypto';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { APP_CONFIG, AppConfig } from '../config';
 import { GradingTask, JudgeRecord } from '../entities';
 import type { UpsertTaskDto } from './judge.dto';
 import { GoldService } from './gold.service';
 import { ModelOutputError, ModelService } from './model.service';
-
-export interface JudgeResultView {
-  recordId: number;
-  taskId: number;
-  score: number;
-  maxScore: number;
-  confidence: number;
-  reasons: string[];
-  comment: string;
-  ocrText: string;
-  model: string;
-  cached: boolean;
-  balance: number;
-  /** 多次采样的分数（只有实时评分、且开启多次采样时才有） */
-  samples?: number[];
-  /** 多次采样的最大分差 */
-  scoreSpread?: number;
-}
+import {
+  GradingInfo,
+  TaskInfo,
+  newGradingId,
+  newJudgeId,
+  normalizeTaskInput,
+  toGradingInfo,
+  toTaskInfo,
+} from './task-info';
 
 @Injectable()
 export class JudgeService {
   private readonly log = new Logger('Judge');
   /** 同一用户同一张图并发请求时合并成一次 */
-  private readonly inflight = new Map<string, Promise<JudgeResultView>>();
+  private readonly inflight = new Map<string, Promise<GradingInfo>>();
 
   constructor(
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
@@ -52,40 +43,44 @@ export class JudgeService {
 
   // ---------- 任务 ----------
 
-  findTask(userId: number, platformHost: string, examTitle: string, questionNo: string) {
-    return this.tasks.findOne({
-      where: { userId, platformHost, examTitle, questionNo },
+  async findTask(userId: number, platformHost: string, exam: string, qIndex: string): Promise<TaskInfo | null> {
+    const t = await this.tasks.findOne({
+      where: { userId, platformHost, examTitle: exam, questionNo: qIndex },
       order: { updatedAt: 'DESC' },
     });
+    return t ? toTaskInfo(t) : null;
   }
 
-  async getTask(userId: number, id: number): Promise<GradingTask> {
+  private async taskEntity(userId: number, id: number): Promise<GradingTask> {
     const t = await this.tasks.findOneBy({ id, userId });
     if (!t) throw new NotFoundException('阅卷任务不存在');
     return t;
   }
 
+  async getTask(userId: number, id: number): Promise<TaskInfo> {
+    return toTaskInfo(await this.taskEntity(userId, id));
+  }
+
   /** 平台 + 考试 + 题号相同则更新，否则新建 */
-  async upsertTask(userId: number, dto: UpsertTaskDto): Promise<GradingTask> {
-    const existing = await this.findTask(userId, dto.platformHost, dto.examTitle, dto.questionNo);
-    const fields = {
-      subject: dto.subject,
-      questionType: dto.questionType ?? '',
-      maxScore: dto.maxScore,
-      scoreStep: dto.scoreStep ?? 1,
-      questionText: dto.questionText ?? '',
-      referenceAnswer: dto.referenceAnswer ?? '',
-      rubric: dto.rubric ?? '',
-    };
-    if (existing) return this.tasks.save(Object.assign(existing, fields));
-    return this.tasks.save(
-      this.tasks.create({
-        userId,
-        platformHost: dto.platformHost,
-        examTitle: dto.examTitle,
-        questionNo: dto.questionNo,
-        ...fields,
-      }),
+  async upsertTask(userId: number, dto: UpsertTaskDto): Promise<TaskInfo> {
+    const { exam, question, majorInput, flat } = normalizeTaskInput(dto);
+    const existing = await this.tasks.findOne({
+      where: { userId, platformHost: dto.platformHost, examTitle: flat.examTitle, questionNo: flat.questionNo },
+      order: { updatedAt: 'DESC' },
+    });
+    const structure = { exam, question, majorInput, ...flat, scoreStep: dto.scoreStep ?? 1 };
+    if (existing) {
+      return toTaskInfo(await this.tasks.save(Object.assign(existing, structure)));
+    }
+    return toTaskInfo(
+      await this.tasks.save(
+        this.tasks.create({
+          userId,
+          platformHost: dto.platformHost,
+          judgeId: newJudgeId(),
+          ...structure,
+        }),
+      ),
     );
   }
 
@@ -101,14 +96,14 @@ export class JudgeService {
       .getRawMany<{ taskId: number; total: number; confirmed: number }>();
     const byId = new Map(counts.map((c) => [Number(c.taskId), c]));
     return rows.map((t) => ({
-      ...t,
+      ...toTaskInfo(t),
       judged: Number(byId.get(t.id)?.total ?? 0),
       confirmed: Number(byId.get(t.id)?.confirmed ?? 0),
     }));
   }
 
   async deleteTask(userId: number, id: number) {
-    const t = await this.getTask(userId, id);
+    const t = await this.taskEntity(userId, id);
     await this.records.delete({ userId, taskId: t.id });
     await this.tasks.delete({ id: t.id });
     return { ok: true };
@@ -125,8 +120,8 @@ export class JudgeService {
     return { bytes: buf.length, sha256: createHash('sha256').update(buf).digest('hex') };
   }
 
-  async judge(userId: number, taskId: number, image: string, force = false): Promise<JudgeResultView> {
-    const task = await this.getTask(userId, taskId);
+  async judge(userId: number, taskId: number, image: string, force = false): Promise<GradingInfo> {
+    const task = await this.taskEntity(userId, taskId);
     const { sha256 } = this.decodeImage(image);
 
     if (!force) {
@@ -134,7 +129,7 @@ export class JudgeService {
         where: { userId, taskId, imageSha256: sha256, status: 'done' },
         order: { id: 'DESC' },
       });
-      if (prev) return this.view(prev, task, true);
+      if (prev) return toGradingInfo(prev, task, true, this.billing.balance(userId));
     }
 
     const key = `${userId}:${taskId}:${sha256}`;
@@ -146,9 +141,21 @@ export class JudgeService {
   }
 
   /** 先扣费再调模型；模型失败则退还并记一条失败记录 */
-  private async runJudge(userId: number, task: GradingTask, image: string, sha256: string): Promise<JudgeResultView> {
+  private async runJudge(
+    userId: number,
+    task: GradingTask,
+    image: string,
+    sha256: string,
+  ): Promise<GradingInfo> {
     let rec = await this.records.save(
-      this.records.create({ userId, taskId: task.id, imageSha256: sha256, status: 'failed', charged: false }),
+      this.records.create({
+        userId,
+        taskId: task.id,
+        gradingId: newGradingId(),
+        imageSha256: sha256,
+        status: 'failed',
+        charged: false,
+      }),
     );
     try {
       this.billing.adjust(userId, -1, 'judge', rec.id, `任务 #${task.id}`);
@@ -175,7 +182,10 @@ export class JudgeService {
         latencyMs: Date.now() - started,
       });
       rec = await this.records.save(rec);
-      return this.view(rec, task, false, { samples: v.samples, scoreSpread: v.spread });
+      return toGradingInfo(rec, task, false, this.billing.balance(userId), {
+        samples: v.samples,
+        scoreSpread: v.spread,
+      });
     } catch (e) {
       this.billing.adjust(userId, 1, 'refund', rec.id, '评分失败退还');
       rec.charged = false;
@@ -190,35 +200,19 @@ export class JudgeService {
     }
   }
 
-  private view(
-    r: JudgeRecord,
-    task: GradingTask,
-    cached: boolean,
-    extra: { samples?: number[]; scoreSpread?: number } = {},
-  ): JudgeResultView {
-    return {
-      recordId: r.id,
-      taskId: task.id,
-      score: r.aiScore ?? 0,
-      maxScore: task.maxScore,
-      confidence: r.confidence ?? 0,
-      reasons: r.reasons ?? [],
-      comment: r.comment,
-      ocrText: r.ocrText,
-      model: r.model,
-      cached,
-      balance: this.billing.balance(r.userId),
-      ...extra,
-    };
-  }
-
-  async confirm(userId: number, recordId: number, finalScore: number, autoSubmitted = false) {
-    const r = await this.records.findOneBy({ id: recordId, userId });
+  /** gradingId 是原版 submitScore 用的标识；沿用数字 id 的旧请求也接受 */
+  async confirm(userId: number, gradingId: string, modifiedScore: number, isAuto = false) {
+    const r = /^\d+$/.test(gradingId)
+      ? await this.records.findOneBy([
+          { id: Number(gradingId), userId },
+          { gradingId, userId },
+        ])
+      : await this.records.findOneBy({ gradingId, userId });
     if (!r || r.status !== 'done') throw new NotFoundException('评分记录不存在');
-    const task = await this.getTask(userId, r.taskId);
-    if (finalScore > task.maxScore) throw new BadRequestException('分数超过满分');
-    r.finalScore = finalScore;
-    r.autoSubmitted = autoSubmitted;
+    const task = await this.taskEntity(userId, r.taskId);
+    if (modifiedScore > task.maxScore) throw new BadRequestException('分数超过满分');
+    r.finalScore = modifiedScore;
+    r.autoSubmitted = isAuto;
     r.confirmedAt = new Date();
     await this.records.save(r);
     return { ok: true };
@@ -232,6 +226,27 @@ export class JudgeService {
       skip: (page - 1) * pageSize,
       take: pageSize,
     });
-    return { items, total, page, pageSize };
+    const tasks = items.length
+      ? await this.tasks.findBy({ id: In([...new Set(items.map((r) => r.taskId))]) })
+      : [];
+    const byId = new Map(tasks.map((t) => [t.id, t]));
+    return {
+      items: items.map((r) => {
+        const task = byId.get(r.taskId);
+        if (!task) return { ...r, gradingId: r.gradingId ?? '' };
+        const view = toGradingInfo(r, task, false, this.billing.balance(userId));
+        return {
+          ...view,
+          status: r.status,
+          charged: r.charged,
+          error: r.error,
+          createdAt: r.createdAt,
+          confirmedAt: r.confirmedAt,
+        };
+      }),
+      total,
+      page,
+      pageSize,
+    };
   }
 }
