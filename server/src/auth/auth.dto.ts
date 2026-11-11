@@ -1,6 +1,8 @@
 import { IsString, Length, Matches } from 'class-validator';
 
 export class RegisterDto {
+  @IsString() @Length(10, 80) inviteToken!: string;
+
   @IsString()
   @Matches(/^[a-zA-Z0-9_一-龥]{3,32}$/, { message: '用户名为 3-32 位字母、数字、下划线或中文' })
   username!: string;

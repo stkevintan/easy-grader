@@ -21,6 +21,7 @@ import { JudgeService } from './judge/judge.service';
 import { GoldService } from './judge/gold.service';
 import { ModelService } from './judge/model.service';
 import { TraceService } from './trace/trace.service';
+import { InviteService } from './invite.service';
 
 @Module({})
 export class AppModule {
@@ -64,6 +65,7 @@ export class AppModule {
         GoldService,
         AdaptersService,
         TraceService,
+        InviteService,
         // 顺序重要：先鉴权（写入 req.user），再按用户限流
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_GUARD, useClass: UserThrottlerGuard },

@@ -73,7 +73,7 @@ export interface Preset {
 export type BgRequest =
   | { cmd: 'auth.status' }
   | { cmd: 'auth.login'; username: string; password: string }
-  | { cmd: 'auth.register'; username: string; password: string }
+  | { cmd: 'auth.register'; username: string; password: string; inviteToken: string }
   | { cmd: 'auth.logout' }
   | { cmd: 'billing.redeem'; code: string }
   | { cmd: 'settings.get' }

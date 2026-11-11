@@ -77,6 +77,22 @@ export class RedeemCode {
   @CreateDateColumn() createdAt!: Date;
 }
 
+@Entity('invite_tokens')
+@Index(['tokenHash'], { unique: true })
+export class InviteToken {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column({ type: 'varchar', length: 64 }) tokenHash!: string;
+  @Column({ type: 'integer' }) unitId!: number;
+  @Column({ type: 'integer', default: 0 }) credits!: number;
+  @Column({ type: 'integer', default: 10 }) maxUses!: number;
+  @Column({ type: 'integer', default: 0 }) usedCount!: number;
+  @Column({ type: 'datetime', nullable: true }) expiresAt!: Date | null;
+  @Column({ type: 'boolean', default: false }) disabled!: boolean;
+  @Column({ type: 'varchar', default: '' }) note!: string;
+  @Column({ type: 'integer', nullable: true }) createdBy!: number | null;
+  @CreateDateColumn() createdAt!: Date;
+}
+
 @Entity('redeem_uses')
 @Index(['codeId', 'userId'], { unique: true })
 export class RedeemUse {
@@ -159,6 +175,7 @@ export const ENTITIES = [
   CreditLedger,
   RedeemCode,
   RedeemUse,
+  InviteToken,
   GradingTask,
   JudgeRecord,
   AdapterPreset,

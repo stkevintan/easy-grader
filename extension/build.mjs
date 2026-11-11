@@ -53,8 +53,11 @@ const manifest = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf8')
 if (dev) {
   manifest.name += '（开发版）';
 } else {
-  manifest.host_permissions = [`${serverUrl}/*`];
-  delete manifest.content_scripts;
+  manifest.host_permissions = [`${serverUrl}/*`, 'https://xiaoxianai.cn/*', 'https://www.xiaoxianai.cn/*'];
+  manifest.content_scripts = [
+    { matches: ['https://xiaoxianai.cn/*', 'https://www.xiaoxianai.cn/*'], js: ['content.js'], run_at: 'document_idle' },
+    { matches: ['https://xiaoxianai.cn/*', 'https://www.xiaoxianai.cn/*'], js: ['insert.js'], run_at: 'document_start', world: 'MAIN' },
+  ];
 }
 writeFileSync(resolve(dist, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
 

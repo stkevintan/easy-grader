@@ -38,7 +38,7 @@ export class AuthController {
   @ThrottleBucket('auth')
   @Post('auth/register')
   register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto.username, dto.password);
+    return this.auth.register(dto.username, dto.password, dto.inviteToken);
   }
 
   @Public()

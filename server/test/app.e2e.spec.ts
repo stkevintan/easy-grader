@@ -71,13 +71,16 @@ describe('Easy Grader server (e2e)', () => {
   });
 
   it('注册赠送额度，用户名唯一，校验密码长度', async () => {
-    await http.post('/api/auth/register').send({ username: 'teacher', password: 'short' }).expect(400);
-    const r = await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123' }).expect(201);
+    await http.post('/api/auth/register').send({ username: 'teacher', password: 'short', inviteToken: 'invalid-token' }).expect(400);
+    const unit = await http.post('/api/admin/units').set(auth(adminToken)).send({ name: '测试邀请单元' }).expect(201);
+    const invite = await http.post('/api/admin/invites').set(auth(adminToken)).send({ unitId: unit.body.id, count: 1, maxUses: 1, credits: 3, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const r = await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     userToken = r.body.token;
     userId = r.body.user.id;
     expect(r.body.user.credits).toBe(3);
-    await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123' }).expect(409);
-    await http.post('/api/auth/register').send({ username: '王老师', password: 'password-123' }).expect(201);
+    await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(409);
+    const invite2 = await http.post('/api/admin/invites').set(auth(adminToken)).send({ unitId: unit.body.id, count: 1, maxUses: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    await http.post('/api/auth/register').send({ username: '王老师', password: 'password-123', inviteToken: invite2.body.tokens[0].token }).expect(201);
   });
 
   it('错误密码 401；多余字段被拒', async () => {
@@ -267,7 +270,7 @@ describe('模型失败时退还次数', () => {
   afterAll(() => app?.close());
 
   it('模型输出无法解析 -> 502，余额不变，记录为 failed', async () => {
-    const cfg = loadConfig({ DB_PATH: ':memory:', ADMIN_PASSWORD: 'admin-password-1', INITIAL_CREDITS: '2' } as NodeJS.ProcessEnv);
+    const cfg = loadConfig({ DB_PATH: ':memory:', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'admin-password-1', INITIAL_CREDITS: '2' } as NodeJS.ProcessEnv);
     const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
       .overrideProvider(ModelService)
       .useValue({
@@ -281,13 +284,16 @@ describe('模型失败时退还次数', () => {
     configureApp(app, cfg);
     await app.init();
     const http = request(app.getHttpServer());
-    const reg = await http.post('/api/auth/register').send({ username: 'user1', password: 'password-123' }).expect(201);
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const reg = await http.post('/api/auth/register').send({ username: 'user1', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http.put('/api/tasks').set(h).send({ platformHost: 'x', examTitle: 'e', questionNo: '1', subject: '语文', maxScore: 5 }).expect(200);
     const r = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('z') }).expect(502);
     expect(r.body.message).toContain('不扣次数');
     const me = await http.get('/api/auth/me').set(h).expect(200);
-    expect(me.body.credits).toBe(2);
+    expect(me.body.credits).toBe(20);
     const recs = await http.get('/api/records').set(h).expect(200);
     expect(recs.body.items[0]).toMatchObject({ status: 'failed', charged: false });
     const led = await http.get('/api/billing/ledger').set(h).expect(200);
@@ -341,6 +347,7 @@ describe('OpenAI 兼容模型接入', () => {
     const port = (fake.address() as import('node:net').AddressInfo).port;
     const cfg = loadConfig({
       DB_PATH: ':memory:',
+      ADMIN_USERNAME: 'admin',
       ADMIN_PASSWORD: 'admin-password-1',
       INITIAL_CREDITS: '5',
       MODEL_BASE_URL: `http://127.0.0.1:${port}/v1/`,
@@ -368,7 +375,10 @@ describe('OpenAI 兼容模型接入', () => {
 
   it('请求格式正确；解析代码块里的 JSON；分数按步长取整；上游失败退还次数', async () => {
     const http = request(app.getHttpServer());
-    const reg = await http.post('/api/auth/register').send({ username: 'model_user', password: 'password-123' }).expect(201);
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const reg = await http.post('/api/auth/register').send({ username: 'model_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http
       .put('/api/tasks')
@@ -380,7 +390,7 @@ describe('OpenAI 兼容模型接入', () => {
     const img = fakePng('m');
     const r = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: img }).expect(200);
     // 分数由逐点 delta 相加得到（2 + 2），不再采用模型自己写的 score
-    expect(r.body).toMatchObject({ score: 4, confidence: 0.82, ocrText: '作者思念外婆', model: 'qwen-vl-test', balance: 4 });
+    expect(r.body).toMatchObject({ score: 4, confidence: 0.82, ocrText: '作者思念外婆', model: 'qwen-vl-test', balance: 19 });
     expect(r.body.reasons).toHaveLength(2);
     // 三次采样结果一致，面板不需要提示不一致
     expect(r.body.samples).toEqual([4, 4, 4]);
@@ -431,7 +441,7 @@ describe('OpenAI 兼容模型接入', () => {
     await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('n') }).expect(503);
     expect(seen.length - before).toBe(3);
     const me = await http.get('/api/auth/me').set(h).expect(200);
-    expect(me.body.credits).toBe(4);
+    expect(me.body.credits).toBe(19);
     status = 200;
 
     // 超时也可重试：上游一直不响应，尝试 3 次后返回 503，退还次数
@@ -440,12 +450,12 @@ describe('OpenAI 兼容模型接入', () => {
     await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('t') }).expect(503);
     expect(seen.length - beforeTimeout).toBe(3);
     delayMs = 0;
-    expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(4);
+    expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(19);
 
     // 模型乱回：502，退还次数
     reply = '我无法判断这份答卷';
     await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('o') }).expect(502);
-    expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(4);
+    expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(19);
 
     // health 显示真实模型名
     expect((await http.get('/api/health')).body.model).toBe('qwen-vl-max');
@@ -453,7 +463,10 @@ describe('OpenAI 兼容模型接入', () => {
 
   it('自动学习：老师确认的分数进入后续提示词，自动提交的不算示例', async () => {
     const http = request(app.getHttpServer());
-    const reg = await http.post('/api/auth/register').send({ username: 'gold_user', password: 'password-123' }).expect(201);
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const reg = await http.post('/api/auth/register').send({ username: 'gold_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http
       .put('/api/tasks')
@@ -495,7 +508,10 @@ describe('OpenAI 兼容模型接入', () => {
 
   it('空白答卷：只调用一次转录，直接 0 分', async () => {
     const http = request(app.getHttpServer());
-    const reg = await http.post('/api/auth/register').send({ username: 'blank_user', password: 'password-123' }).expect(201);
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const reg = await http.post('/api/auth/register').send({ username: 'blank_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http
       .put('/api/tasks')
@@ -508,7 +524,7 @@ describe('OpenAI 兼容模型接入', () => {
     const r = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('blank') }).expect(200);
     expect(seen.length - before).toBe(1); // 识别为空白，不再调用评分
     expect(r.body).toMatchObject({ score: 0, confidence: 0.2, ocrText: '（空白）' });
-    expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(4);
+    expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(19);
     ocrReply = '作者思念外婆';
   });
 });
@@ -518,7 +534,7 @@ describe('限流', () => {
   afterAll(() => app?.close());
 
   it('登录接口超过 RATE_LIMIT_AUTH 返回 429，不影响 health', async () => {
-    const cfg = loadConfig({ DB_PATH: ':memory:', ADMIN_PASSWORD: 'admin-password-1', RATE_LIMIT_AUTH: '3' } as NodeJS.ProcessEnv);
+    const cfg = loadConfig({ DB_PATH: ':memory:', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'admin-password-1', RATE_LIMIT_AUTH: '3' } as NodeJS.ProcessEnv);
     const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
