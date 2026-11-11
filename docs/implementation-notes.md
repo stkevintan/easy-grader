@@ -12,7 +12,7 @@ Manifest 只声明 storage、activeTab 和授权域名；生产环境使用域�
 
 JudgeRequest 包含 taskId、adapter、subject、question、answerText、answerImageUrl、rubric；JudgeResult 包含 score、maxScore、confidence、reasons、warnings、modelVersion。Service worker 只接受 judge.create、judge.status、judge.cancel、account.get、settings.get、settings.set；未知命令拒绝。
 
-任务结构对齐咖喱阅卷的 `taskInfo`：`{ taskId, judgeId, exam: { exam, subject, q_index }, question: { type, content: { score, title, reference, command, … } }, majorInput: { key, name, content } }`；评分结果用 `gradingId`、`score`、`reason`、`ocr`、`modifiedScore`、`isAuto`，分别对应原版的 `grading_id`、`score`、`reason`、`ocr`、`modified_score`、`is_auto`。数据库的扁平列（examTitle、questionNo 等）继续用于索引和提示词，JSON 列是任务结构的来源。
+任务结构对齐咖喱阅卷的 `taskInfo`：`{ taskId, judgeId, exam: { exam, subject, q_index }, question: { type, content: { score, title, reference, command, … } }, majorInput: { key, name, content } }`；评分结果用 `gradingId`、`score`、`reason`、`ocr`、`modifiedScore`、`isAuto`，分别对应原版的 `grading_id`、`score`、`reason`、`ocr`、`modified_score`、`is_auto`。数据库的扁平列（examTitle、questionNo 等）只作为索引和提示词的冗余，JSON 列是任务结构的唯一来源；旧的扁平请求字段不再接受。
 
 ## 适配器契约
 

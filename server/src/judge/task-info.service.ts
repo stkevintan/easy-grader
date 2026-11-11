@@ -2,7 +2,6 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { GradingTask, JudgeRecord } from '../entities';
-import { toTaskInfo } from './task-info';
 
 /**
  * 启动时给旧数据补上 judgeId / gradingId，并把扁平的题目字段回填成
@@ -27,11 +26,18 @@ export class TaskInfoService implements OnModuleInit {
 
     const legacy = await this.tasks.find({ where: { exam: IsNull() } });
     for (const t of legacy) {
-      const info = toTaskInfo(t);
       await this.tasks.update(t.id, {
-        exam: info.exam,
-        question: info.question,
-        majorInput: info.majorInput,
+        exam: { exam: t.examTitle, subject: t.subject, q_index: t.questionNo },
+        question: {
+          type: t.questionType,
+          content: {
+            score: t.maxScore,
+            title: t.questionText,
+            reference: t.referenceAnswer,
+            command: t.rubric,
+          },
+        },
+        majorInput: { key: 'command', name: '评分细则', content: t.rubric },
       });
     }
     if (legacy.length) this.log.log(`已回填 ${legacy.length} 条任务的题目结构`);

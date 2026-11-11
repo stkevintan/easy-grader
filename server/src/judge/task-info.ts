@@ -75,30 +75,14 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v : v == null ? '' : String(v);
 }
 
-/** 实体 → 原版 taskInfo 结构；旧数据没有 JSON 列时从扁平列还原 */
+/** 实体 → 原版 taskInfo 结构 */
 export function toTaskInfo(t: GradingTask): TaskInfo {
-  const exam: ExamInfo = t.exam ?? {
-    exam: t.examTitle,
-    subject: t.subject,
-    q_index: t.questionNo,
-  };
-  const question: QuestionInfo = t.question ?? {
-    type: t.questionType,
-    content: {
-      score: t.maxScore,
-      title: t.questionText,
-      reference: t.referenceAnswer,
-      command: t.rubric,
-    },
-  };
+  const exam = t.exam!;
+  const question = t.question!;
+  const majorInput = t.majorInput!;
   const content: QuestionContent = {
     ...question.content,
-    score: Number(question.content.score ?? t.maxScore),
-  };
-  const majorInput: MajorInput = t.majorInput ?? {
-    key: 'command',
-    name: '评分细则',
-    content: t.rubric,
+    score: Number(question.content.score),
   };
   return {
     taskId: t.id,
@@ -132,27 +116,19 @@ export interface NormalizedTask {
   };
 }
 
-/**
- * 请求 → 任务结构。优先读嵌套的 exam / question / majorInput，
- * 同时接受旧版的扁平字段，方便已安装的扩展平滑升级。
- */
+/** 请求 → 任务结构 */
 export function normalizeTaskInput(dto: UpsertTaskDto): NormalizedTask {
   const exam: ExamInfo = {
-    exam: str(dto.exam?.exam ?? dto.examTitle).trim(),
-    subject: str(dto.exam?.subject ?? dto.subject ?? SUBJECTS[0]),
-    q_index: str(dto.exam?.q_index ?? dto.questionNo).trim(),
+    exam: dto.exam.exam.trim(),
+    subject: dto.exam.subject,
+    q_index: dto.exam.q_index.trim(),
   };
   if (!exam.exam) throw new BadRequestException('请填写考试名称');
   if (!exam.q_index) throw new BadRequestException('请填写题号');
   if (!SUBJECTS.includes(exam.subject)) throw new BadRequestException(`学科必须是：${SUBJECTS.join('、')}`);
 
-  const content: QuestionContent = { ...(dto.question?.content ?? {}) };
-  if (dto.questionText !== undefined) content.title = dto.questionText;
-  if (dto.referenceAnswer !== undefined) content.reference = dto.referenceAnswer;
-  if (dto.rubric !== undefined) content.command = dto.rubric;
-
-  const rawScore = content.score ?? dto.maxScore;
-  const score = Number(rawScore);
+  const content: QuestionContent = { ...dto.question.content };
+  const score = Number(content.score);
   if (!Number.isFinite(score) || score < 0.5 || score > 200) throw new BadRequestException('请填写满分（0.5–200）');
   content.score = score;
 
@@ -163,8 +139,8 @@ export function normalizeTaskInput(dto: UpsertTaskDto): NormalizedTask {
   };
   content.command = majorInput.content;
 
-  const type = str(dto.question?.type ?? dto.questionType).trim();
-  const extra = str(dto.question?.extra).trim();
+  const type = dto.question.type.trim();
+  const extra = str(dto.question.extra).trim();
   const question: QuestionInfo = {
     type,
     content,

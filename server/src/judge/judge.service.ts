@@ -200,14 +200,9 @@ export class JudgeService {
     }
   }
 
-  /** gradingId 是原版 submitScore 用的标识；沿用数字 id 的旧请求也接受 */
+  /** gradingId 是原版 submitScore 用的标识 */
   async confirm(userId: number, gradingId: string, modifiedScore: number, isAuto = false) {
-    const r = /^\d+$/.test(gradingId)
-      ? await this.records.findOneBy([
-          { id: Number(gradingId), userId },
-          { gradingId, userId },
-        ])
-      : await this.records.findOneBy({ gradingId, userId });
+    const r = await this.records.findOneBy({ gradingId, userId });
     if (!r || r.status !== 'done') throw new NotFoundException('评分记录不存在');
     const task = await this.taskEntity(userId, r.taskId);
     if (modifiedScore > task.maxScore) throw new BadRequestException('分数超过满分');

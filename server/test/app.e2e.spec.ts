@@ -154,13 +154,12 @@ describe('Easy Grader server (e2e)', () => {
       .set(auth(userToken))
       .expect(200);
     expect(l.body.task.taskId).toBe(taskId);
-    // 旧版的扁平字段仍然接受
-    const legacy = await http
+    // 旧版的扁平字段不再接受
+    await http
       .put('/api/tasks')
       .set(auth(userToken))
       .send({ platformHost: 'localhost', examTitle: '月考', questionNo: '3', subject: '语文', maxScore: 5 })
-      .expect(200);
-    expect(legacy.body.exam).toEqual({ exam: '月考', subject: '语文', q_index: '3' });
+      .expect(400);
     await http
       .put('/api/tasks')
       .set(auth(userToken))
@@ -317,7 +316,7 @@ describe('模型失败时退还次数', () => {
     const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'user1', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
-    const t = await http.put('/api/tasks').set(h).send({ platformHost: 'x', examTitle: 'e', questionNo: '1', subject: '语文', maxScore: 5 }).expect(200);
+    const t = await http.put('/api/tasks').set(h).send({ platformHost: 'x', exam: { exam: 'e', subject: '语文', q_index: '1' }, question: { type: '其他', content: { score: 5 } } }).expect(200);
     const r = await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('z') }).expect(502);
     expect(r.body.message).toContain('不扣次数');
     const me = await http.get('/api/auth/me').set(h).expect(200);
@@ -411,7 +410,12 @@ describe('OpenAI 兼容模型接入', () => {
     const t = await http
       .put('/api/tasks')
       .set(h)
-      .send({ platformHost: 'x', examTitle: '期中', questionNo: '17', subject: '语文', maxScore: 6, scoreStep: 0.5, referenceAnswer: '思念外婆', rubric: '每点 3 分' })
+      .send({
+        platformHost: 'x',
+        exam: { exam: '期中', subject: '语文', q_index: '17' },
+        question: { type: '阅读理解', content: { score: 6, reference: '思念外婆', command: '每点 3 分' } },
+        scoreStep: 0.5,
+      })
       .expect(200);
 
     reply = '好的，评分如下：\n```json\n{"score": 4.3, "confidence": 0.82, "ocr_text": "作者思念外婆", "points": [{"rubric": "①", "level": "full", "delta": 2, "quote": "思念外婆"}, {"rubric": "②", "level": "full", "delta": 2, "quote": "作者思念"}], "reasons": ["答出思念外婆 +3", "未答乡村生活 -2"], "comment": "要点不全"}\n```';
@@ -499,7 +503,11 @@ describe('OpenAI 兼容模型接入', () => {
     const t = await http
       .put('/api/tasks')
       .set(h)
-      .send({ platformHost: 'gold.example', examTitle: '月考', questionNo: '9', subject: '语文', maxScore: 6, rubric: '答出三点得满分' })
+      .send({
+        platformHost: 'gold.example',
+        exam: { exam: '月考', subject: '语文', q_index: '9' },
+        question: { type: '其他', content: { score: 6, command: '答出三点得满分' } },
+      })
       .expect(200);
 
     ocrReply = '答案甲：强化关键核心技术攻关';
@@ -544,7 +552,11 @@ describe('OpenAI 兼容模型接入', () => {
     const t = await http
       .put('/api/tasks')
       .set(h)
-      .send({ platformHost: 'blank.example', examTitle: '月考', questionNo: '2', subject: '语文', maxScore: 6, rubric: '每点 2 分' })
+      .send({
+        platformHost: 'blank.example',
+        exam: { exam: '月考', subject: '语文', q_index: '2' },
+        question: { type: '其他', content: { score: 6, command: '每点 2 分' } },
+      })
       .expect(200);
 
     ocrReply = '（空白）';

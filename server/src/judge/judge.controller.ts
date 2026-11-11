@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -29,10 +28,7 @@ export class JudgeController {
   /** 扩展打开一道题时，用 平台+考试+题号 找上次的配置（断点续阅） */
   @Get('tasks/lookup')
   async lookup(@CurrentUser() u: AuthUser, @Query() q: FindTaskQuery) {
-    const exam = q.exam ?? q.examTitle;
-    const qIndex = q.q_index ?? q.questionNo;
-    if (!exam || !qIndex) throw new BadRequestException('缺少 exam 或 q_index');
-    return { task: await this.judge.findTask(u.id, q.platformHost, exam, qIndex) };
+    return { task: await this.judge.findTask(u.id, q.platformHost, q.exam, q.q_index) };
   }
 
   @Get('tasks')
@@ -65,9 +61,7 @@ export class JudgeController {
   @HttpCode(200)
   @Post('records/:id/confirm')
   confirm(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ConfirmDto) {
-    const score = dto.modifiedScore ?? dto.finalScore;
-    if (score === undefined) throw new BadRequestException('缺少 modifiedScore');
-    return this.judge.confirm(u.id, id, score, dto.isAuto ?? dto.autoSubmitted ?? false);
+    return this.judge.confirm(u.id, id, dto.modifiedScore, dto.isAuto ?? false);
   }
 
   @Get('records')

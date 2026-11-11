@@ -18,14 +18,14 @@ export const SUBJECTS = ['语文', '数学', '英语', '历史', '地理', '道�
 
 /** 对齐咖喱阅卷 taskInfo.exam */
 export class ExamDto {
-  @IsOptional() @IsString() @MaxLength(200) exam?: string;
-  @IsOptional() @IsIn(SUBJECTS) subject?: string;
-  @IsOptional() @IsString() @MaxLength(100) q_index?: string;
+  @IsString() @MaxLength(200) exam!: string;
+  @IsIn(SUBJECTS) subject!: string;
+  @IsString() @MaxLength(100) q_index!: string;
 }
 
 /** 对齐 taskInfo.question.content；不同题型用不同字段 */
 export class QuestionContentDto {
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0.5) @Max(200) score?: number;
+  @Type(() => Number) @IsNumber() @Min(0.5) @Max(200) score!: number;
   @IsOptional() @IsString() @MaxLength(8000) title?: string;
   @IsOptional() @IsString() @MaxLength(8000) reference?: string;
   @IsOptional() @IsString() @MaxLength(8000) command?: string;
@@ -36,8 +36,8 @@ export class QuestionContentDto {
 }
 
 export class QuestionDto {
-  @IsOptional() @IsString() @MaxLength(50) type?: string;
-  @IsOptional() @ValidateNested() @Type(() => QuestionContentDto) content?: QuestionContentDto;
+  @IsString() @MaxLength(50) type!: string;
+  @ValidateNested() @Type(() => QuestionContentDto) content!: QuestionContentDto;
   @IsOptional() @IsString() @MaxLength(8000) extra?: string;
 }
 
@@ -50,28 +50,16 @@ export class MajorInputDto {
 
 export class UpsertTaskDto {
   @IsString() @MaxLength(255) platformHost!: string;
-  @IsOptional() @ValidateNested() @Type(() => ExamDto) exam?: ExamDto;
-  @IsOptional() @ValidateNested() @Type(() => QuestionDto) question?: QuestionDto;
+  @ValidateNested() @Type(() => ExamDto) exam!: ExamDto;
+  @ValidateNested() @Type(() => QuestionDto) question!: QuestionDto;
   @IsOptional() @ValidateNested() @Type(() => MajorInputDto) majorInput?: MajorInputDto;
   @IsOptional() @Type(() => Number) @IsIn([0.5, 1, 2, 5]) scoreStep?: number;
-
-  /** 旧版的扁平字段，继续接受，服务端会归一化成上面的结构 */
-  @IsOptional() @IsString() @MaxLength(200) examTitle?: string;
-  @IsOptional() @IsString() @MaxLength(100) questionNo?: string;
-  @IsOptional() @IsIn(SUBJECTS) subject?: string;
-  @IsOptional() @IsString() @MaxLength(50) questionType?: string;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0.5) @Max(200) maxScore?: number;
-  @IsOptional() @IsString() @MaxLength(8000) questionText?: string;
-  @IsOptional() @IsString() @MaxLength(8000) referenceAnswer?: string;
-  @IsOptional() @IsString() @MaxLength(8000) rubric?: string;
 }
 
 export class FindTaskQuery {
   @IsString() @MaxLength(255) platformHost!: string;
-  @IsOptional() @IsString() @MaxLength(200) exam?: string;
-  @IsOptional() @IsString() @MaxLength(100) q_index?: string;
-  @IsOptional() @IsString() @MaxLength(200) examTitle?: string;
-  @IsOptional() @IsString() @MaxLength(100) questionNo?: string;
+  @IsString() @MaxLength(200) exam!: string;
+  @IsString() @MaxLength(100) q_index!: string;
 }
 
 export class JudgeDto {
@@ -85,10 +73,8 @@ export class JudgeDto {
 }
 
 export class ConfirmDto {
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(200) modifiedScore?: number;
-  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(200) finalScore?: number;
+  @Type(() => Number) @IsNumber() @Min(0) @Max(200) modifiedScore!: number;
   @IsOptional() @IsBoolean() isAuto?: boolean;
-  @IsOptional() @IsBoolean() autoSubmitted?: boolean;
 }
 
 export class ListQuery {
