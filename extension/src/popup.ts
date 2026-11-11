@@ -12,7 +12,6 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 let user: PublicUser | null = null;
 let tab: chrome.tabs.Tab | undefined;
-let authMode: 'login' | 'register' = 'login';
 
 /** 当前标签页能否注入：只处理 http(s) 页面 */
 const tabOrigin = () => {
@@ -106,31 +105,34 @@ function enableSite() {
   });
 }
 
-function setAuthMode(mode: 'login' | 'register') {
-  authMode = mode;
-  const registering = mode === 'register';
-  show('invite-field', registering);
-  $<HTMLInputElement>('invite-token').required = registering;
-  $('login-btn').textContent = registering ? '注册' : '登录';
-  $('register-btn').textContent = registering ? '返回登录' : '注册账号';
-  $('login-form').setAttribute('aria-label', registering ? '注册账号' : '登录');
-}
-
-async function auth(cmd: 'auth.login' | 'auth.register') {
-  const username = $<HTMLInputElement>('username').value.trim();
-  const password = $<HTMLInputElement>('password').value;
+async function login() {
+  const username = $<HTMLInputElement>('login-username').value.trim();
+  const password = $<HTMLInputElement>('login-password').value;
   if (!username || password.length < 8) return say('login-msg', 'error', '请输入用户名和至少 8 位密码');
   try {
-    const inviteToken = $<HTMLInputElement>('invite-token').value.trim();
-    if (cmd === 'auth.register' && !inviteToken) return say('login-msg', 'error', '请输入单元邀请令牌');
-    if (cmd === 'auth.register') await bg({ cmd, username, password, inviteToken });
-    else await bg({ cmd, username, password });
-    $<HTMLInputElement>('password').value = '';
-    $<HTMLInputElement>('invite-token').value = '';
+    await bg({ cmd: 'auth.login', username, password });
+    $<HTMLInputElement>('login-password').value = '';
     say('login-msg', 'ok', '');
     await renderAccount();
   } catch (e) {
     say('login-msg', 'error', errText(e));
+  }
+}
+
+async function register() {
+  const username = $<HTMLInputElement>('register-username').value.trim();
+  const password = $<HTMLInputElement>('register-password').value;
+  const inviteToken = $<HTMLInputElement>('invite-token').value.trim();
+  if (!username || password.length < 8) return say('register-msg', 'error', '请输入用户名和至少 8 位密码');
+  if (!inviteToken) return say('register-msg', 'error', '请输入单元邀请令牌');
+  try {
+    await bg({ cmd: 'auth.register', username, password, inviteToken });
+    $<HTMLInputElement>('register-password').value = '';
+    $<HTMLInputElement>('invite-token').value = '';
+    say('register-msg', 'ok', '');
+    await renderAccount();
+  } catch (e) {
+    say('register-msg', 'error', errText(e));
   }
 }
 
@@ -190,13 +192,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('save-settings').addEventListener('click', saveSettings);
   $('login-form').addEventListener('submit', (e) => {
     e.preventDefault();
-    void auth('auth.login');
+    void login();
   });
-  $('register-btn').addEventListener('click', () => {
-    if (authMode === 'login') setAuthMode('register');
-    else setAuthMode('login');
+  $('register-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    void register();
   });
-  setAuthMode('login');
+  $('show-register').addEventListener('click', () => {
+    show('login-form', false);
+    show('login-msg', false);
+    show('register-panel', true);
+  });
+  $('show-login').addEventListener('click', () => {
+    show('register-panel', false);
+    show('login-form', true);
+    show('register-msg', false);
+  });
   $('logout').addEventListener('click', async () => {
     await bg({ cmd: 'auth.logout' });
     await renderAccount();
