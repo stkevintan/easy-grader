@@ -690,6 +690,27 @@ describe('纯函数', () => {
     expect(prompt).toContain('【补充说明】\n结合材料作答。');
   });
 
+  it('majorInput 指向参考答案时仍把评分细则带进提示词', () => {
+    const task = {
+      subject: '语文',
+      maxScore: 6,
+      scoreStep: 1,
+      questionType: '',
+      questionText: '',
+      referenceAnswer: '',
+      rubric: '',
+      question: {
+        type: '阅读理解',
+        content: { score: 6, reference: '参考答案文本', command: '每点 2 分，扣分不超过满分' },
+      },
+      majorInput: { key: 'reference', name: '参考答案', content: '参考答案文本' },
+    } as unknown as Parameters<typeof buildPrompt>[0];
+    const prompt = buildPrompt(task, [], '学生作答');
+    expect(prompt).toContain('【评分标准】\n参考答案文本');
+    expect(prompt).toContain('【评分细则】\n每点 2 分，扣分不超过满分');
+    expect(prompt.match(/参考答案文本/g)).toHaveLength(1);
+  });
+
   it('逐点判定：引用必须出现在答卷文字里，分数由 delta 汇总', () => {
     const reply = JSON.stringify({
       points: [

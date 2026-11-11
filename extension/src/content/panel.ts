@@ -331,7 +331,19 @@ export class Panel {
     const ref = h('textarea', { id: 'eg-ref', maxlength: 8000, placeholder: '参考答案' });
     ref.value = String(content.reference ?? '');
     const rubric = h('textarea', { id: 'eg-rubric', maxlength: 8000, placeholder: '评分细则，例如：答出“思念外婆”得 2 分；答出“怀念乡村生活”得 2 分……' });
-    rubric.value = String(t?.majorInput.content ?? content.command ?? '');
+    const majorKey = t?.majorInput.key ?? 'command';
+    // 评分依据可能指向题干/参考答案；编辑这些字段时同步评分依据，避免保存时用旧值覆盖
+    rubric.value = String(content[majorKey] ?? t?.majorInput.content ?? content.command ?? '');
+    qtext.addEventListener('input', () => {
+      if (majorKey === 'title') rubric.value = qtext.value;
+    });
+    ref.addEventListener('input', () => {
+      if (majorKey === 'reference') rubric.value = ref.value;
+    });
+    rubric.addEventListener('input', () => {
+      if (majorKey === 'title') qtext.value = rubric.value;
+      else if (majorKey === 'reference') ref.value = rubric.value;
+    });
 
     s.body.append(
       h('h4', {}, '题目设置'),
