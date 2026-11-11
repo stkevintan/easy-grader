@@ -11,8 +11,9 @@ export type PointLevel = 'full' | 'partial' | 'none';
  * 1：单阶段整体评分（旧格式）
  * 2：两阶段 + 逐点判定 + 引用校验
  * 3：引用忽略「（划掉：…）」标注；明确要点句是得分单位、标准里的典型事例也算依据
+ * 4：majorInput 指向参考答案/题干时，额外带上 question.content.command 作为评分细则
  */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 /** 模型对评分标准中某一个点的判定；quote 必须能在转录文字里找到原文 */
 export interface VerdictPoint {
@@ -187,6 +188,7 @@ export function buildPrompt(task: GradingTask, examples: GoldExample[] = [], tra
   const questionType = text(task.question?.type) || task.questionType;
   const title = text(content.title) || task.questionText;
   const reference = text(content.reference) || task.referenceAnswer;
+  const command = text(content.command);
   const resource = text(content.resource);
   const target = text(content.target);
   const targetCommand = text(content.target_command);
@@ -202,7 +204,7 @@ export function buildPrompt(task: GradingTask, examples: GoldExample[] = [], tra
   if (title) parts.push(`【题目】\n${title}`);
   if (target && target !== title) parts.push(`【题目/写作目标】\n${target}`);
   if (targetCommand) parts.push(`【题目要求】\n${targetCommand}`);
-  if (reference) parts.push(`【参考答案】\n${reference}`);
+  if (reference && reference !== rubric) parts.push(`【参考答案】\n${reference}`);
   if (rubric) {
     parts.push(`【评分标准】\n${rubric}`);
     parts.push(
@@ -215,6 +217,8 @@ export function buildPrompt(task: GradingTask, examples: GoldExample[] = [], tra
       ].join('\n'),
     );
   }
+  // majorInput 可能指向参考答案/题干；评分细则单独带上，避免被覆盖后丢失
+  if (command && command !== rubric && command !== reference) parts.push(`【评分细则】\n${command}`);
   if (keywords) parts.push(`【关键词】\n${keywords}`);
   if (extra) parts.push(`【补充说明】\n${extra}`);
   if (examples.length) {

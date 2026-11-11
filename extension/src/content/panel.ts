@@ -331,7 +331,19 @@ export class Panel {
     const ref = h('textarea', { id: 'eg-ref', maxlength: 8000, placeholder: '参考答案' });
     ref.value = String(content.reference ?? '');
     const rubric = h('textarea', { id: 'eg-rubric', maxlength: 8000, placeholder: '评分细则，例如：答出“思念外婆”得 2 分；答出“怀念乡村生活”得 2 分……' });
-    rubric.value = String(t?.majorInput.content ?? content.command ?? '');
+    const majorKey = t?.majorInput.key ?? 'command';
+    // 评分依据可能指向题干/参考答案；编辑这些字段时同步评分依据，避免保存时用旧值覆盖
+    rubric.value = String(content[majorKey] ?? t?.majorInput.content ?? content.command ?? '');
+    qtext.addEventListener('input', () => {
+      if (majorKey === 'title') rubric.value = qtext.value;
+    });
+    ref.addEventListener('input', () => {
+      if (majorKey === 'reference') rubric.value = ref.value;
+    });
+    rubric.addEventListener('input', () => {
+      if (majorKey === 'title') qtext.value = rubric.value;
+      else if (majorKey === 'reference') ref.value = rubric.value;
+    });
 
     s.body.append(
       h('h4', {}, '题目设置'),
@@ -351,12 +363,16 @@ export class Panel {
           const maxScore = Number(max.value);
           if (!exam.value.trim() || !qno.value.trim()) return this.fail('请填写考试名称和题号');
           if (!(maxScore > 0)) return this.fail('请填写满分');
-          if (!ref.value.trim() && !rubric.value.trim()) return this.fail('参考答案和评分细则至少填一项');
+          // 评分依据不是 command 时，command 里的给分规则会单独保留；
+          // 清空参考答案不应连带阻止保存
+          const preservedCommand = majorKey !== 'command' ? String(content.command ?? '').trim() : '';
+          if (!ref.value.trim() && !rubric.value.trim() && !preservedCommand) {
+            return this.fail('参考答案和评分细则至少填一项');
+          }
           try {
             // 表单只覆盖它展示的字段；resource/target/keywords/extra 等要保留
             const prevQuestion = this.task?.question;
             const prevMajor = this.task?.majorInput;
-            const majorKey = prevMajor?.key ?? 'command';
             const input: TaskInput = {
               platformHost: location.host,
               scoreStep: Number(step.value),
