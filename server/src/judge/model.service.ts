@@ -182,15 +182,29 @@ export function isBlankOcr(text: string): boolean {
 }
 
 export function buildPrompt(task: GradingTask, examples: GoldExample[] = [], transcript?: string): string {
+  const text = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+  const content = task.question?.content ?? {};
+  const questionType = text(task.question?.type) || task.questionType;
+  const title = text(content.title) || task.questionText;
+  const reference = text(content.reference) || task.referenceAnswer;
+  const resource = text(content.resource);
+  const target = text(content.target);
+  const targetCommand = text(content.target_command);
+  const keywords = text(content.keywords);
+  const extra = text(task.question?.extra);
+  const rubric = text(task.majorInput?.content) || task.rubric;
   const parts = [
     `你是一名经验丰富、严格公正的${task.subject}阅卷老师。请根据下面的题目、参考答案和评分标准，给这份学生手写答卷打分。`,
     `满分：${task.maxScore} 分；给分步长：${task.scoreStep} 分。`,
   ];
-  if (task.questionType) parts.push(`题型：${task.questionType}`);
-  if (task.questionText) parts.push(`【题目】\n${task.questionText}`);
-  if (task.referenceAnswer) parts.push(`【参考答案】\n${task.referenceAnswer}`);
-  if (task.rubric) {
-    parts.push(`【评分标准】\n${task.rubric}`);
+  if (questionType) parts.push(`题型：${questionType}`);
+  if (resource) parts.push(`【材料】\n${resource}`);
+  if (title) parts.push(`【题目】\n${title}`);
+  if (target && target !== title) parts.push(`【题目/写作目标】\n${target}`);
+  if (targetCommand) parts.push(`【题目要求】\n${targetCommand}`);
+  if (reference) parts.push(`【参考答案】\n${reference}`);
+  if (rubric) {
+    parts.push(`【评分标准】\n${rubric}`);
     parts.push(
       [
         '【评分标准的读法】',
@@ -201,6 +215,8 @@ export function buildPrompt(task: GradingTask, examples: GoldExample[] = [], tra
       ].join('\n'),
     );
   }
+  if (keywords) parts.push(`【关键词】\n${keywords}`);
+  if (extra) parts.push(`【补充说明】\n${extra}`);
   if (examples.length) {
     parts.push(
       [

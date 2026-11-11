@@ -162,7 +162,7 @@
 }
 ```
 
-`question.content.score` 必填，范围 0.5–200；`majorInput` 省略时默认取 `question.content.command`。
+`question.content.score` 必填，范围 0.5–200；`majorInput` 省略时默认取 `question.content.command`。`majorInput.key` 指向 `question.content` 中的一个文本字段，不能是 `score`；只有显式传 `majorInput.content` 时才覆盖该字段，其他字段保持不变。
 
 ### `GET /api/tasks/lookup`
 

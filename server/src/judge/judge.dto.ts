@@ -1,9 +1,11 @@
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
+  IsDefined,
   IsIn,
   IsInt,
   IsNumber,
+  IsObject,
   IsOptional,
   IsString,
   Length,
@@ -37,7 +39,7 @@ export class QuestionContentDto {
 
 export class QuestionDto {
   @IsString() @MaxLength(50) type!: string;
-  @ValidateNested() @Type(() => QuestionContentDto) content!: QuestionContentDto;
+  @IsDefined() @IsObject() @ValidateNested() @Type(() => QuestionContentDto) content!: QuestionContentDto;
   @IsOptional() @IsString() @MaxLength(8000) extra?: string;
 }
 
@@ -50,8 +52,8 @@ export class MajorInputDto {
 
 export class UpsertTaskDto {
   @IsString() @MaxLength(255) platformHost!: string;
-  @ValidateNested() @Type(() => ExamDto) exam!: ExamDto;
-  @ValidateNested() @Type(() => QuestionDto) question!: QuestionDto;
+  @IsDefined() @IsObject() @ValidateNested() @Type(() => ExamDto) exam!: ExamDto;
+  @IsDefined() @IsObject() @ValidateNested() @Type(() => QuestionDto) question!: QuestionDto;
   @IsOptional() @ValidateNested() @Type(() => MajorInputDto) majorInput?: MajorInputDto;
   @IsOptional() @Type(() => Number) @IsIn([0.5, 1, 2, 5]) scoreStep?: number;
 }

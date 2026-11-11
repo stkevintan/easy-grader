@@ -132,12 +132,15 @@ export function normalizeTaskInput(dto: UpsertTaskDto): NormalizedTask {
   if (!Number.isFinite(score) || score < 0.5 || score > 200) throw new BadRequestException('请填写满分（0.5–200）');
   content.score = score;
 
+  const key = str(dto.majorInput?.key) || 'command';
+  if (key === 'score') throw new BadRequestException('majorInput.key 不能是 score');
   const majorInput: MajorInput = {
-    key: str(dto.majorInput?.key || 'command'),
+    key,
     name: str(dto.majorInput?.name || '评分细则'),
-    content: str(dto.majorInput?.content ?? content.command),
+    content: str(dto.majorInput?.content ?? content[key] ?? content.command),
   };
-  content.command = majorInput.content;
+  // 只覆盖 majorInput 显式给出的字段；key 不是 command 时保留原有评分细则
+  if (dto.majorInput?.content !== undefined) content[key] = majorInput.content;
 
   const type = dto.question.type.trim();
   const extra = str(dto.question.extra).trim();

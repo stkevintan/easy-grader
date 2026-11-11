@@ -353,6 +353,10 @@ export class Panel {
           if (!(maxScore > 0)) return this.fail('请填写满分');
           if (!ref.value.trim() && !rubric.value.trim()) return this.fail('参考答案和评分细则至少填一项');
           try {
+            // 表单只覆盖它展示的字段；resource/target/keywords/extra 等要保留
+            const prevQuestion = this.task?.question;
+            const prevMajor = this.task?.majorInput;
+            const majorKey = prevMajor?.key ?? 'command';
             const input: TaskInput = {
               platformHost: location.host,
               scoreStep: Number(step.value),
@@ -360,13 +364,19 @@ export class Panel {
               question: {
                 type: qtype.value.trim(),
                 content: {
+                  ...(prevQuestion?.content ?? {}),
                   score: maxScore,
                   title: qtext.value.trim(),
                   reference: ref.value.trim(),
-                  command: rubric.value.trim(),
+                  ...(majorKey === 'command' ? { command: rubric.value.trim() } : {}),
                 },
+                ...(prevQuestion?.extra ? { extra: prevQuestion.extra } : {}),
               },
-              majorInput: { key: 'command', name: '评分细则', content: rubric.value.trim() },
+              majorInput: {
+                key: majorKey,
+                name: prevMajor?.name ?? '评分细则',
+                content: rubric.value.trim(),
+              },
             };
             this.task = await bg<TaskInfo>({ cmd: 'task.upsert', task: input });
             // 评分标准变了，当前这份需要重新判

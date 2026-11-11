@@ -154,6 +154,30 @@ describe('Easy Grader server (e2e)', () => {
       .set(auth(userToken))
       .expect(200);
     expect(l.body.task.taskId).toBe(taskId);
+    // exam / question 是必填对象，缺了要 400 而不是 500
+    await http.put('/api/tasks').set(auth(userToken)).send({ platformHost: 'localhost' }).expect(400);
+    await http
+      .put('/api/tasks')
+      .set(auth(userToken))
+      .send({ platformHost: 'localhost', exam: body.exam })
+      .expect(400);
+    // majorInput 指向 reference 时不能把 command 覆盖掉
+    const m = await http
+      .put('/api/tasks')
+      .set(auth(userToken))
+      .send({
+        platformHost: 'localhost',
+        exam: { exam: '月考', subject: '语文', q_index: 'major' },
+        question: {
+          type: '阅读理解',
+          content: { score: 6, command: '原评分细则', reference: '参考答案文本' },
+        },
+        majorInput: { key: 'reference', name: '参考答案', content: '参考答案文本' },
+      })
+      .expect(200);
+    expect(m.body.question.content.command).toBe('原评分细则');
+    expect(m.body.majorInput.content).toBe('参考答案文本');
+    await http.delete(`/api/tasks/${m.body.taskId}`).set(auth(userToken)).expect(200);
     // 旧版的扁平字段不再接受
     await http
       .put('/api/tasks')
@@ -208,6 +232,8 @@ describe('Easy Grader server (e2e)', () => {
     const recs = await http.get('/api/records').query({ taskId }).set(auth(userToken)).expect(200);
     const id = recs.body.items.find((r: any) => r.status === 'done').gradingId;
     await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: 99 }).expect(400);
+    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: null }).expect(400);
+    await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({}).expect(400);
     await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: 5, isAuto: false }).expect(200);
     const tasks = await http.get('/api/tasks').set(auth(userToken)).expect(200);
     expect(tasks.body.find((t: any) => t.taskId === taskId)).toMatchObject({ judged: 3, confirmed: 1 });
@@ -637,11 +663,31 @@ describe('纯函数', () => {
       questionText: '',
       referenceAnswer: '',
       rubric: '①强化关键核心技术自主攻关。如杂交水稻的研发实践。',
+      question: {
+        type: '阅读理解',
+        extra: '结合材料作答。',
+        content: {
+          score: 6,
+          title: '概括文章内容',
+          reference: '参考答案文本',
+          command: '①强化关键核心技术自主攻关。如杂交水稻的研发实践。',
+          resource: '材料一：杂交水稻研发历程。',
+          target: '写作目标文本',
+          target_command: '不少于 800 字。',
+          keywords: '杂交水稻；粮食安全',
+        },
+      },
+      majorInput: { key: 'command', name: '评分细则', content: '①强化关键核心技术自主攻关。如杂交水稻的研发实践。' },
     } as unknown as Parameters<typeof buildPrompt>[0];
     const prompt = buildPrompt(task, [], '①杂交水稻育种');
     expect(prompt).toContain('【评分标准的读法】');
     expect(prompt).toContain('要点句');
     expect(prompt).toContain('典型事例');
+    expect(prompt).toContain('【材料】\n材料一：杂交水稻研发历程。');
+    expect(prompt).toContain('【题目/写作目标】\n写作目标文本');
+    expect(prompt).toContain('【题目要求】\n不少于 800 字。');
+    expect(prompt).toContain('【关键词】\n杂交水稻；粮食安全');
+    expect(prompt).toContain('【补充说明】\n结合材料作答。');
   });
 
   it('逐点判定：引用必须出现在答卷文字里，分数由 delta 汇总', () => {
