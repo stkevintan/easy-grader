@@ -120,6 +120,8 @@ export async function saveTask(form: TaskForm) {
 // ---------- 评分 ----------
 
 let abortController: AbortController | null = null;
+/** Monotonic counter to distinguish concurrent judgeOnce() calls. */
+let judgeGeneration = 0;
 
 export async function judgeOnce(force = false, preCaptured?: string): Promise<GradingInfo | null> {
   const cur = state.value;
@@ -130,6 +132,7 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
 
   clearNotice();
   state.value = { view: 'judging', task, auto: false };
+  const gen = ++judgeGeneration;
 
   try {
     const info = readPaperInfo(cfg);
@@ -137,14 +140,17 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
       throw new AdapterError(`页面题号变成了「${info.questionNo}」，与当前任务「${task.exam.q_index}」不一致，请到「题目设置」确认`);
     }
     const image = preCaptured ?? (await captureAnswer(cfg.pics));
+    if (gen !== judgeGeneration) return null; // superseded by a newer request
     lastImage.value = image;
     lastFingerprint.value = fingerprint(cfg);
     const r = await bg<GradingInfo>({ cmd: 'judge.run', taskId: task.taskId, image, force });
+    if (gen !== judgeGeneration) return null; // superseded while awaiting
     if (state.value.view !== 'judging') return null;
     if (user.value) user.value = { ...user.value, credits: r.balance };
     state.value = { view: 'result', task, result: r };
     return r;
   } catch (e) {
+    if (gen !== judgeGeneration) return null; // superseded
     setNotice('error', errText(e));
     state.value = { view: 'ready', task };
     return null;
@@ -187,7 +193,7 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
       await bg({ cmd: 'record.confirm', gradingId: r.gradingId, modifiedScore: score, isAuto: autoSubmitted });
     } catch (e) {
       console.warn('[EasyGrader] record.confirm failed:', e);
-      if (!andNext) {
+      if (!autoSubmitted) {
         setNotice('warn', `分数已写入平台，但服务端记录确认失败：${errText(e)}。评分历史可能不一致，请联系管理员。`);
         state.value = { view: 'ready', task };
         return false;
