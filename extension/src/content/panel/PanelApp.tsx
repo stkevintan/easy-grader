@@ -23,7 +23,7 @@ export function PanelApp() {
     switch (s.view) {
       case 'login':   return <LoginView />;
       case 'adapt':   return <AdaptView draft={s.draft} />;
-      case 'task':    return <TaskFormView form={s.form} existingTask={null} />;
+      case 'task':    return <TaskFormView form={s.form} existingTask={s.existingTask} />;
       case 'ready':   return <ReadyView task={s.task} />;
       case 'judging': return <JudgingView task={s.task} />;
       case 'result':  return <ResultView task={s.task} result={s.result} />;

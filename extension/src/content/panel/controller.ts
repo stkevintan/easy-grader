@@ -67,7 +67,7 @@ export async function lookupTask(cfg: AdapterConfig) {
     } catch { /* fall through to task form */ }
   }
   const info2 = readPaperInfo(cfg);
-  state.value = { view: 'task', form: new TaskForm(null, { examTitle: info2.examTitle, questionNo: info2.questionNo, maxScore: info2.maxScore }) };
+  state.value = { view: 'task', form: new TaskForm(null, { examTitle: info2.examTitle, questionNo: info2.questionNo, maxScore: info2.maxScore }), existingTask: null };
 }
 
 // ---------- 适配向导 ----------
@@ -98,7 +98,7 @@ export async function saveDraft(draft: AdapterConfig) {
 export function openTaskForm(existingTask: TaskInfo | null) {
   const cfg = preset.value?.config;
   const info = cfg ? readPaperInfo(cfg) : { examTitle: '', questionNo: '', maxScore: null };
-  state.value = { view: 'task', form: new TaskForm(existingTask, info) };
+  state.value = { view: 'task', form: new TaskForm(existingTask, info), existingTask };
   clearNotice();
 }
 
@@ -182,9 +182,19 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
     await new Promise<void>((res) => setTimeout(res, 120));
     if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
 
-    // confirm: log but don't block on failure
-    bg({ cmd: 'record.confirm', gradingId: r.gradingId, modifiedScore: score, isAuto: autoSubmitted })
-      .catch((e) => console.warn('[EasyGrader] record.confirm failed:', e));
+    // confirm: await and surface recoverable failure (platform score already written)
+    try {
+      await bg({ cmd: 'record.confirm', gradingId: r.gradingId, modifiedScore: score, isAuto: autoSubmitted });
+    } catch (e) {
+      console.warn('[EasyGrader] record.confirm failed:', e);
+      if (!andNext) {
+        setNotice('warn', `分数已写入平台，但服务端记录确认失败：${errText(e)}。评分历史可能不一致，请联系管理员。`);
+        state.value = { view: 'ready', task };
+        return false;
+      }
+      // Auto mode: log and continue
+      setNotice('warn', `上一份的服务端记录确认失败：${errText(e)}`);
+    }
 
     if (!andNext) {
       setNotice('ok', `已写入 ${fmt(score)} 分，请在平台上检查后手动提交`);
@@ -238,11 +248,12 @@ export function stopAuto(msg?: string) {
   isAuto.value = false;
   abortController?.abort();
   abortController = null;
-  if (msg && was) {
-    setNotice('info', msg);
-    const cur = state.value;
-    const task = 'task' in cur ? (cur as { task: TaskInfo }).task : null;
-    if (task) state.value = { view: 'ready', task };
+  // In manual/semi-auto mode, also transition out of judging/waiting
+  const cur = state.value;
+  const task = 'task' in cur ? (cur as { task: TaskInfo }).task : null;
+  if (task && (cur.view === 'judging' || cur.view === 'waiting' || (msg && was))) {
+    if (msg) setNotice('info', msg);
+    state.value = { view: 'ready', task };
   }
 }
 

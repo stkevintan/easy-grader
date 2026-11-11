@@ -66,7 +66,7 @@ export class Panel {
 
     // Preact 挂载点
     const appEl = document.createElement('div');
-    appEl.className = 'panel-body';
+    appEl.className = 'body';
     this.appEl = appEl;
 
     const panel = document.createElement('section');
@@ -100,7 +100,7 @@ export class Panel {
 
     // 初始化状态
     await init();
-    this.startJudgeWatcher();
+    if (this.host) this.startJudgeWatcher();
   }
 
   private updateHeader() {

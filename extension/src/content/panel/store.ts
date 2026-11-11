@@ -14,7 +14,7 @@ import { TaskForm } from './forms/task-form';
 export type PanelState =
   | { view: 'login' }
   | { view: 'adapt'; draft: AdapterConfig }
-  | { view: 'task'; form: TaskForm }
+  | { view: 'task'; form: TaskForm; existingTask: TaskInfo | null }
   | { view: 'ready'; task: TaskInfo }
   | { view: 'judging'; task: TaskInfo; auto: boolean }
   | { view: 'result'; task: TaskInfo; result: GradingInfo }

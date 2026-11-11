@@ -14,7 +14,10 @@ interface Props {
 
 export function TaskFormView({ form, existingTask }: Props) {
   // 触发重渲染用的 tick
+  // A signal read during render creates a subscription.
+  // Mutating it in event handlers re-renders the component.
   const tick = useSignal(0);
+  void tick.value; // subscribe
   const rerender = () => { tick.value++; };
 
   const f = form.values;
