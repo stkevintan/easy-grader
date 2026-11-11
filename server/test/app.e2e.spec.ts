@@ -461,7 +461,7 @@ describe('OpenAI 兼容模型接入', () => {
     const trace = JSON.parse(readFileSync(join(traceDir, traceJson!), 'utf8'));
     expect(trace.task).toMatchObject({ questionNo: '17', maxScore: 6 });
     expect(trace.version).toBe(2); // trace 文件结构版本
-    expect(trace.promptVersion).toBe(3); // 提示词/解析规则版本
+    expect(trace.promptVersion).toBe(4); // 提示词/解析规则版本
     expect(trace.prompt).toContain('满分：6 分');
     expect(trace.prompt).toContain('【评分标准的读法】');
     expect(trace.prompt).toContain('【已转录的答卷文字】\n作者思念外婆');

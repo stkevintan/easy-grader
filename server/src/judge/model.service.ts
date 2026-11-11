@@ -11,8 +11,9 @@ export type PointLevel = 'full' | 'partial' | 'none';
  * 1：单阶段整体评分（旧格式）
  * 2：两阶段 + 逐点判定 + 引用校验
  * 3：引用忽略「（划掉：…）」标注；明确要点句是得分单位、标准里的典型事例也算依据
+ * 4：majorInput 指向参考答案/题干时，额外带上 question.content.command 作为评分细则
  */
-export const PROMPT_VERSION = 3;
+export const PROMPT_VERSION = 4;
 
 /** 模型对评分标准中某一个点的判定；quote 必须能在转录文字里找到原文 */
 export interface VerdictPoint {
