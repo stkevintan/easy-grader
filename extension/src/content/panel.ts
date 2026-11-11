@@ -363,12 +363,16 @@ export class Panel {
           const maxScore = Number(max.value);
           if (!exam.value.trim() || !qno.value.trim()) return this.fail('请填写考试名称和题号');
           if (!(maxScore > 0)) return this.fail('请填写满分');
-          if (!ref.value.trim() && !rubric.value.trim()) return this.fail('参考答案和评分细则至少填一项');
+          // 评分依据不是 command 时，command 里的给分规则会单独保留；
+          // 清空参考答案不应连带阻止保存
+          const preservedCommand = majorKey !== 'command' ? String(content.command ?? '').trim() : '';
+          if (!ref.value.trim() && !rubric.value.trim() && !preservedCommand) {
+            return this.fail('参考答案和评分细则至少填一项');
+          }
           try {
             // 表单只覆盖它展示的字段；resource/target/keywords/extra 等要保留
             const prevQuestion = this.task?.question;
             const prevMajor = this.task?.majorInput;
-            const majorKey = prevMajor?.key ?? 'command';
             const input: TaskInput = {
               platformHost: location.host,
               scoreStep: Number(step.value),
