@@ -26,6 +26,7 @@ describe('Easy Grader server (e2e)', () => {
   let adminToken: string;
   let userToken: string;
   let userId: number;
+  let activeUnitId: number;
 
   beforeAll(async () => {
     const cfg = loadConfig({
@@ -50,7 +51,7 @@ describe('Easy Grader server (e2e)', () => {
     await app?.close();
   });
 
-  const auth = (t: string) => ({ authorization: `Bearer ${t}` });
+  const auth = (t: string) => ({ authorization: `Bearer ${t}`, 'x-unit-id': String(activeUnitId) });
 
   it('health 不需要登录', async () => {
     const r = await http.get('/api/health').expect(200);
@@ -77,6 +78,7 @@ describe('Easy Grader server (e2e)', () => {
     const r = await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     userToken = r.body.token;
     userId = r.body.user.id;
+    activeUnitId = unit.body.id;
     expect(r.body.user.credits).toBe(3);
     await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(409);
     const invite2 = await http.post('/api/admin/invites').set(auth(adminToken)).send({ unitId: unit.body.id, count: 1, maxUses: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
