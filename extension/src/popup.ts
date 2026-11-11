@@ -49,7 +49,7 @@ async function renderPage() {
   const sites = await bg<string[]>({ cmd: 'site.list' });
   // 开发版的 manifest 自带本机演示页的内容脚本，无需单独启用
   const builtIn = __DEV__ && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
-  const autoEnabled = AUTO_ENABLED_ORIGINS.has(origin);
+  const autoEnabled = !__DEV__ && AUTO_ENABLED_ORIGINS.has(origin);
   const enabled = builtIn || autoEnabled || sites.includes(origin);
   show('site-row', !enabled);
   $<HTMLButtonElement>('open-panel').textContent = enabled ? '打开 / 关闭阅卷面板' : '在本页临时打开面板';
@@ -204,13 +204,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   $('show-register').addEventListener('click', () => {
     show('login-form', false);
-    show('login-msg', false);
+    say('login-msg', 'ok', '');
     show('register-panel', true);
+    say('register-msg', 'ok', '');
   });
   $('show-login').addEventListener('click', () => {
     show('register-panel', false);
     show('login-form', true);
-    show('register-msg', false);
+    say('register-msg', 'ok', '');
+    say('login-msg', 'ok', '');
   });
   $('logout').addEventListener('click', async () => {
     await bg({ cmd: 'auth.logout' });

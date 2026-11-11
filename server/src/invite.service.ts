@@ -16,12 +16,13 @@ export class InviteService {
 
   async create(unitId: number, createdBy: number, count: number, maxUses: number, credits: number, expiresAt: Date, note: string) {
     if (!(await this.units.existsBy({ id: unitId, enabled: true }))) throw new BadRequestException('管理单元不存在或已停用');
-    const result: string[] = [];
+    const result: { id: number; token: string }[] = [];
     while (result.length < count) {
       const token = makeToken();
       try {
         await this.tokens.insert({ tokenHash: hashToken(token), unitId, credits, maxUses, expiresAt, note: note.slice(0, 200), createdBy });
-        result.push(token);
+        const saved = await this.tokens.findOneByOrFail({ tokenHash: hashToken(token) });
+        result.push({ id: saved.id, token });
       } catch (error) {
         const code = (error as { code?: string }).code;
         if (code !== 'SQLITE_CONSTRAINT_UNIQUE') throw error;

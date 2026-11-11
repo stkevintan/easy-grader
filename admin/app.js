@@ -456,7 +456,7 @@ function invitesPage() {
   return listPage({
     title: '单元邀请令牌',
     searchPlaceholder: '搜索备注',
-    load: ({ page, q }) => api('GET', `/api/admin/invites?${qs({ page, q })}`),
+    load: ({ page, q }) => api('GET', `/api/admin/invites?${qs({ page, q, pageSize: 20 })}`),
     toolbar: [
       (refresh) => h('button', { class: 'primary', onclick: async () => {
         const units = (await api('GET', '/api/admin/units')).filter((u) => u.enabled);
@@ -487,7 +487,7 @@ function invitesPage() {
             if (Number.isNaN(expiry.getTime()) || expiry <= new Date()) throw new Error('过期日期必须晚于当前时间');
             const r = await api('POST', '/api/admin/invites', { unitId: Number(v.unitId), count, maxUses, credits, expiresAt: expiry.toISOString(), note: v.note || undefined });
             refresh();
-            setTimeout(() => openDialog({ title: `已生成 ${r.tokens.length} 个邀请令牌`, fields: [{ name: 'tokens', label: '复制后分发', type: 'textarea', value: r.tokens.join('\n'), readonly: true }], extra: h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(r.tokens.join('\n')).then(() => toast('已复制')) }, '复制全部') }), 0);
+            setTimeout(() => openDialog({ title: `已生成 ${r.tokens.length} 个邀请令牌`, fields: [{ name: 'tokens', label: '复制后分发', type: 'textarea', value: r.tokens.map((x) => `${x.id}: ${x.token}`).join('\n'), readonly: true }], extra: h('button', { type: 'button', onclick: () => navigator.clipboard.writeText(r.tokens.map((x) => x.token).join('\n')).then(() => toast('已复制')) }, '复制全部') }), 0);
           },
         });
       } }, '生成邀请令牌'),
