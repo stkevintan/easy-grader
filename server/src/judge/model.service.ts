@@ -217,7 +217,7 @@ export function buildPrompt(task: GradingTask, examples: GoldExample[] = [], tra
     );
   }
   // majorInput 可能指向参考答案/题干；评分细则单独带上，避免被覆盖后丢失
-  if (command && command !== rubric) parts.push(`【评分细则】\n${command}`);
+  if (command && command !== rubric && command !== reference) parts.push(`【评分细则】\n${command}`);
   if (keywords) parts.push(`【关键词】\n${keywords}`);
   if (extra) parts.push(`【补充说明】\n${extra}`);
   if (examples.length) {
