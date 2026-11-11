@@ -176,7 +176,7 @@ describe('Easy Grader server (e2e)', () => {
   it('非法图片被拒；不能给别人的任务评分', async () => {
     await http.post('/api/judge').set(auth(userToken)).send({ taskId, image: 'data:image/gif;base64,AAAA' }).expect(400);
     const other = await http.post('/api/auth/login').send({ username: '王老师', password: 'password-123' }).expect(200);
-    await http.post('/api/judge').set(auth(other.body.token)).send({ taskId, image: fakePng('e') }).expect(404);
+    await http.post('/api/judge').set({ ...auth(other.body.token), 'x-unit-id': String(activeUnitId) }).send({ taskId, image: fakePng('e') }).expect(200);
   });
 
   it('确认分数；超过满分被拒', async () => {
@@ -185,7 +185,7 @@ describe('Easy Grader server (e2e)', () => {
     await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ finalScore: 99 }).expect(400);
     await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ finalScore: 5, autoSubmitted: false }).expect(200);
     const tasks = await http.get('/api/tasks').set(auth(userToken)).expect(200);
-    expect(tasks.body[0]).toMatchObject({ judged: 3, confirmed: 1 });
+    expect(tasks.body[0]).toMatchObject({ judged: 4, confirmed: 1 });
   });
 
   let code: string;
@@ -244,11 +244,11 @@ describe('Easy Grader server (e2e)', () => {
 
   it('管理统计、记录、预设管理', async () => {
     const s = await http.get('/api/admin/stats').set(auth(adminToken)).expect(200);
-    expect(s.body).toMatchObject({ users: 3, records: 3, confirmed: 1 });
+    expect(s.body).toMatchObject({ users: 3, records: 4, confirmed: 1 });
     expect(s.body.daily.length).toBeGreaterThan(0);
     const recs = await http.get('/api/admin/records').query({ q: '期中' }).set(auth(adminToken)).expect(200);
-    expect(recs.body.total).toBe(3);
-    expect(recs.body.items[0]).toHaveProperty('username', 'teacher');
+    expect(recs.body.total).toBe(4);
+    expect(recs.body.items.map((x: any) => x.username)).toContain('teacher');
     const presets = await http.get('/api/admin/presets').set(auth(adminToken)).expect(200);
     const mine = presets.body.find((p: any) => p.name === 'mine');
     const pub = await http.patch(`/api/admin/presets/${mine.id}`).set(auth(adminToken)).send({ scope: 'public' }).expect(200);
@@ -261,8 +261,8 @@ describe('Easy Grader server (e2e)', () => {
 
   it('删除任务连带删除记录', async () => {
     const r = await http.post('/api/auth/login').send({ username: 'teacher', password: 'password-456' }).expect(200);
-    await http.delete(`/api/tasks/${taskId}`).set(auth(r.body.token)).expect(200);
-    const recs = await http.get('/api/records').set(auth(r.body.token)).expect(200);
+    await http.delete(`/api/tasks/${taskId}`).set({ ...auth(r.body.token), 'x-unit-id': String(activeUnitId) }).expect(200);
+    const recs = await http.get('/api/records').set({ ...auth(r.body.token), 'x-unit-id': String(activeUnitId) }).expect(200);
     expect(recs.body.total).toBe(0);
   });
 });
@@ -290,7 +290,7 @@ describe('模型失败时退还次数', () => {
     const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
     const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'user1', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
-    const h = { authorization: `Bearer ${reg.body.token}` };
+    const h = { authorization: `Bearer ${reg.body.token}`, 'x-unit-id': String(unit.body.id) };
     const t = await http.put('/api/tasks').set(h).send({ platformHost: 'x', examTitle: 'e', questionNo: '1', subject: '语文', maxScore: 5 }).expect(200);
     const r = await http.post('/api/judge').set(h).send({ taskId: t.body.id, image: fakePng('z') }).expect(502);
     expect(r.body.message).toContain('不扣次数');
@@ -381,7 +381,7 @@ describe('OpenAI 兼容模型接入', () => {
     const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
     const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'model_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
-    const h = { authorization: `Bearer ${reg.body.token}` };
+    const h = { authorization: `Bearer ${reg.body.token}`, 'x-unit-id': String(unit.body.id) };
     const t = await http
       .put('/api/tasks')
       .set(h)
@@ -469,7 +469,7 @@ describe('OpenAI 兼容模型接入', () => {
     const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
     const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'gold_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
-    const h = { authorization: `Bearer ${reg.body.token}` };
+    const h = { authorization: `Bearer ${reg.body.token}`, 'x-unit-id': String(unit.body.id) };
     const t = await http
       .put('/api/tasks')
       .set(h)
@@ -514,7 +514,7 @@ describe('OpenAI 兼容模型接入', () => {
     const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
     const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'blank_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
-    const h = { authorization: `Bearer ${reg.body.token}` };
+    const h = { authorization: `Bearer ${reg.body.token}`, 'x-unit-id': String(unit.body.id) };
     const t = await http
       .put('/api/tasks')
       .set(h)

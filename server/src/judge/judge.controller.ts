@@ -39,7 +39,7 @@ export class JudgeController {
     return this.judge.getTask(u.id, unit.id, id);
   }
 
-  @UnitAccess(['manager', 'owner'])
+  @UnitAccess(['grader', 'manager', 'owner'])
   @Delete('tasks/:id')
   remove(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Param('id', ParseIntPipe) id: number) {
     return this.judge.deleteTask(u.id, unit.id, id);
