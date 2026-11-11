@@ -456,7 +456,7 @@ function invitesPage() {
   return listPage({
     title: '单元邀请令牌',
     searchPlaceholder: '搜索备注',
-    load: ({ q }) => api('GET', `/api/admin/invites?${qs({ q })}`),
+    load: ({ page, q }) => api('GET', `/api/admin/invites?${qs({ page, q })}`),
     toolbar: [
       (refresh) => h('button', { class: 'primary', onclick: async () => {
         const units = (await api('GET', '/api/admin/units')).filter((u) => u.enabled);
@@ -485,7 +485,7 @@ function invitesPage() {
     cols: [
       { title: '单元', render: (x) => x.unitId },
       { title: '已用/上限', render: (x) => `${x.usedCount} / ${x.maxUses}` },
-      { title: '状态', render: (x) => x.disabled ? tag('已停用', 'bad') : x.expiresAt && new Date(String(x.expiresAt).replace(' ', 'T') + 'Z') < new Date() ? tag('已过期', 'warn') : x.usedCount >= x.maxUses ? tag('已用完') : tag('可用', 'ok') },
+      { title: '状态', render: (x) => x.disabled ? tag('已停用', 'bad') : x.expiresAt && new Date(x.expiresAt) < new Date() ? tag('已过期', 'warn') : x.usedCount >= x.maxUses ? tag('已用完') : tag('可用', 'ok') },
       { title: '过期时间', render: (x) => fmtTime(x.expiresAt) },
       { title: '备注', render: (x) => x.note || '—', wrap: true },
       { title: '操作', render: (x) => linkBtn(x.disabled ? '启用' : '停用', async () => { await api('PATCH', `/api/admin/invites/${x.id}`, { disabled: !x.disabled }); route(); }, x.disabled ? '' : 'danger') },

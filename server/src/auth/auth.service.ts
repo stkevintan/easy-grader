@@ -83,10 +83,11 @@ export class AuthService implements OnApplicationBootstrap {
   async register(username: string, password: string, inviteToken: string) {
     if (!this.cfg.allowRegister) throw new ForbiddenException('当前未开放注册，请联系管理员开通账号');
     if (await this.users.existsBy({ username })) throw new ConflictException('用户名已被占用');
+    const passwordHash = await hashPassword(password);
     return this.ds.transaction(async (manager) => {
       const unitId = await this.invites.consume(inviteToken, manager);
       const users = manager.getRepository(User);
-      let user = users.create({ username, passwordHash: await hashPassword(password), role: 'user', credits: 0, lastLoginAt: new Date() });
+      let user = users.create({ username, passwordHash, role: 'user', credits: 0, lastLoginAt: new Date() });
       try {
         user = await users.save(user);
       } catch {

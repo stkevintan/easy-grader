@@ -30,10 +30,11 @@ export class InviteService {
     return result;
   }
 
-  list(q?: string) {
-    const qb = this.tokens.createQueryBuilder('t').orderBy('t.id', 'DESC').take(500);
+  async list(q?: string, page = 1, pageSize = 20) {
+    const qb = this.tokens.createQueryBuilder('t').orderBy('t.id', 'DESC').skip((page - 1) * pageSize).take(pageSize);
     if (q) qb.where('t.note LIKE :q OR t.tokenHash LIKE :q', { q: `%${q}%` });
-    return qb.getMany();
+    const [items, total] = await qb.getManyAndCount();
+    return { items, total, page, pageSize };
   }
 
   async disable(id: number, disabled: boolean) {

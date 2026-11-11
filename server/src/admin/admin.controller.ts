@@ -256,8 +256,9 @@ export class AdminController {
   }
 
   @Get('invites')
-  listInvites(@Query('q') q?: string) {
-    return this.invites.list(q);
+  listInvites(@Query() q: PageQuery) {
+    const { page, pageSize } = paging(q);
+    return this.invites.list(q.q, page, pageSize);
   }
 
   @Post('invites')
