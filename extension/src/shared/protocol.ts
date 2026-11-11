@@ -99,7 +99,7 @@ export type BgRequest =
 export type BgResponse<T = unknown> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 
 /** popup -> 内容脚本 */
-export type TabRequest = { cmd: 'panel.toggle' } | { cmd: 'panel.status' };
+export type TabRequest = { cmd: 'panel.toggle' } | { cmd: 'panel.status' } | { cmd: 'panel.unitChanged' };
 
 export async function bg<T>(req: BgRequest): Promise<T> {
   const res = (await chrome.runtime.sendMessage(req)) as BgResponse<T> | undefined;

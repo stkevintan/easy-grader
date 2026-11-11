@@ -27,6 +27,7 @@ export class JudgeController {
     return this.judge.listTasks(u.id, unit.id);
   }
 
+  @UnitAccess(['grader', 'manager', 'owner'])
   @Put('tasks')
   upsert(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Body() dto: UpsertTaskDto) {
     if (dto.unitId !== undefined && dto.unitId !== unit.id) throw new BadRequestException('管理单元不一致');
@@ -38,11 +39,13 @@ export class JudgeController {
     return this.judge.getTask(u.id, unit.id, id);
   }
 
+  @UnitAccess(['manager', 'owner'])
   @Delete('tasks/:id')
   remove(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Param('id', ParseIntPipe) id: number) {
     return this.judge.deleteTask(u.id, unit.id, id);
   }
 
+  @UnitAccess(['grader', 'manager', 'owner'])
   @ThrottleBucket('judge')
   @HttpCode(200)
   @Post('judge')
@@ -51,6 +54,7 @@ export class JudgeController {
     return this.judge.judge(u.id, unit.id, dto.taskId, dto.image, dto.force);
   }
 
+  @UnitAccess(['grader', 'manager', 'owner'])
   @HttpCode(200)
   @Post('records/:id/confirm')
   confirm(@CurrentUser() u: AuthUser, @CurrentUnit() unit: UnitContext, @Param('id', ParseIntPipe) id: number, @Body() dto: ConfirmDto) {

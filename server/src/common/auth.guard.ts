@@ -36,6 +36,10 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 /** 仅管理员 */
 export const AdminOnly = () => SetMetadata(ADMIN_KEY, true);
 
+export const CurrentUnit = createParamDecorator(
+  (_: unknown, ctx: ExecutionContext): UnitContext => ctx.switchToHttp().getRequest().unit,
+);
+
 export const CurrentUser = createParamDecorator(
   (_: unknown, ctx: ExecutionContext): AuthUser => ctx.switchToHttp().getRequest().user,
 );
@@ -44,10 +48,6 @@ export interface UnitContext {
   id: number;
   role: UnitRole;
 }
-
-export const CurrentUnit = createParamDecorator(
-  (_: unknown, ctx: ExecutionContext): UnitContext => ctx.switchToHttp().getRequest().unit,
-);
 
 /**
  * 全局鉴权：Bearer JWT，每次请求都回表校验用户状态，

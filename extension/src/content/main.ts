@@ -14,7 +14,10 @@ if (!window.__easyGrader && window.top === window) {
   window.__easyGrader = panel;
   chrome.runtime.onMessage.addListener((m: TabRequest, sender, sendResponse) => {
     if (sender.id !== chrome.runtime.id) return false;
-    if (m.cmd === 'panel.toggle') {
+    if (m.cmd === 'panel.unitChanged') {
+      void panel.resetForUnitChange();
+      sendResponse({ ok: true });
+    } else if (m.cmd === 'panel.toggle') {
       panel.toggle();
       sendResponse({ ok: true });
     } else if (m.cmd === 'panel.status') {

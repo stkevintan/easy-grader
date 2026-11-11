@@ -52,15 +52,15 @@ export class JudgeService {
 
   // ---------- 任务 ----------
 
-  findTask(userId: number, unitId: number, platformHost: string, examTitle: string, questionNo: string) {
+  findTask(_userId: number, unitId: number, platformHost: string, examTitle: string, questionNo: string) {
     return this.tasks.findOne({
       where: { unitId, platformHost, examTitle, questionNo },
       order: { updatedAt: 'DESC' },
     });
   }
 
-  async getTask(userId: number, unitId: number, id: number): Promise<GradingTask> {
-    const t = await this.tasks.findOneBy({ id, userId, unitId });
+  async getTask(_userId: number, unitId: number, id: number): Promise<GradingTask> {
+    const t = await this.tasks.findOneBy({ id, unitId });
     if (!t) throw new NotFoundException('阅卷任务不存在');
     return t;
   }
@@ -213,10 +213,10 @@ export class JudgeService {
     };
   }
 
-  async confirm(userId: number, unitId: number, recordId: number, finalScore: number, autoSubmitted = false) {
+  async confirm(_userId: number, unitId: number, recordId: number, finalScore: number, autoSubmitted = false) {
     const r = await this.records.findOneBy({ id: recordId, unitId });
     if (!r || r.status !== 'done') throw new NotFoundException('评分记录不存在');
-    const task = await this.getTask(userId, unitId, r.taskId);
+    const task = await this.getTask(_userId, unitId, r.taskId);
     if (finalScore > task.maxScore) throw new BadRequestException('分数超过满分');
     r.finalScore = finalScore;
     r.autoSubmitted = autoSubmitted;

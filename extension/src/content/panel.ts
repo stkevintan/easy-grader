@@ -47,6 +47,7 @@ export class Panel {
   private judgeCandidateAt = 0;
   /** 已经自动判过（含失败）的指纹，避免同一条答卷反复触发 */
   private autoAttempted = '';
+  private activeUnitId: number | null = null;
 
   get isOpen() {
     return this.shell !== null;
@@ -107,9 +108,27 @@ export class Panel {
     if (!this.user) this.view = 'login';
   }
 
+  async resetForUnitChange() {
+    this.stopAuto();
+    this.abort?.abort();
+    this.task = null;
+    this.result = null;
+    this.preset = null;
+    this.config = null;
+    this.activeUnitId = null;
+    this.view = 'login';
+    this.notice = { kind: 'info', text: '管理单元已切换，请刷新面板状态。' };
+    if (this.shell) {
+      await this.refreshUser();
+      if (this.user) await this.loadAdapter();
+      this.render();
+    }
+  }
+
   private async loadAdapter() {
     try {
-      await bg({ cmd: 'units.get' });
+      const units = await bg<{ units: Array<{ id: number }>; activeUnitId?: number }>({ cmd: 'units.get' });
+      this.activeUnitId = units.activeUnitId ?? null;
       const r = await bg<{ preset: Preset | null }>({ cmd: 'adapter.resolve', host: location.host, path: location.pathname });
       this.preset = r.preset;
       this.config = r.preset?.config ?? null;

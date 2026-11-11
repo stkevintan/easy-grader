@@ -53,8 +53,8 @@ export class UnitController {
   }
 
   @UnitAccess(['owner', 'manager'])
-  @Get(':id/members')
-  async members(@Param('id', ParseIntPipe) unitId: number) {
+  @Get(':unitId/members')
+  async members(@Param('unitId', ParseIntPipe) unitId: number) {
     const rows = await this.memberships.find({ where: { unitId }, order: { id: 'ASC' } });
     const users = rows.length ? await this.users.findByIds(rows.map((r) => r.userId)) : [];
     const byId = new Map(users.map((u) => [u.id, u]));

@@ -19,14 +19,14 @@ export class UnitService implements OnApplicationBootstrap {
   }
 
   async ensurePersonalUnit(user: User): Promise<ManagementUnit> {
-    const membership = await this.memberships.findOne({ where: { userId: user.id, role: 'owner' }, order: { id: 'ASC' } });
-    if (membership) {
-      const unit = await this.units.findOneByOrFail({ id: membership.unitId });
-      await this.backfill(user.id, unit.id);
-      return unit;
+    const name = `${user.username}的个人单元`;
+    const personal = await this.units.findOneBy({ ownerId: user.id, description: '系统自动创建的个人管理单元' });
+    if (personal) {
+      await this.backfill(user.id, personal.id);
+      return personal;
     }
     const unit = await this.units.save(this.units.create({
-      name: `${user.username}的个人单元`,
+      name,
       description: '系统自动创建的个人管理单元',
       ownerId: user.id,
       enabled: true,

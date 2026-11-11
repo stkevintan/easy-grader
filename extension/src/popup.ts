@@ -37,6 +37,7 @@ async function renderAccount() {
   if (user) {
     $('who').textContent = `${user.username}${user.role === 'admin' ? '（管理员）' : ''}${r.offline ? ' · 服务端离线' : ''}`;
     $('credits').textContent = String(user.credits);
+    await loadUnits();
   }
   await renderPage();
 }
@@ -155,7 +156,6 @@ function mountServerField() {
 
 async function loadSettings() {
   const s = await bg<Settings>({ cmd: 'settings.get' });
-  if (user) await loadUnits();
   if (__DEV__) $<HTMLInputElement>('server-url').value = s.serverUrl;
   $<HTMLInputElement>('min-conf').value = String(Math.round(s.autoMinConfidence * 100));
   $<HTMLInputElement>('interval').value = String(s.autoIntervalMs / 1000);
@@ -210,6 +210,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('unit-select').addEventListener('change', async () => {
     try {
       await bg({ cmd: 'unit.set', unitId: Number($<HTMLSelectElement>('unit-select').value) });
+      if (tab?.id) await chrome.tabs.sendMessage(tab.id, { cmd: 'panel.unitChanged' }).catch(() => undefined);
       say('unit-msg', 'ok', '管理单元已切换');
     } catch (e) {
       say('unit-msg', 'error', errText(e));

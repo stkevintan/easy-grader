@@ -11,6 +11,7 @@ import { InviteService } from '../invite.service';
 import { AdminOnly, AuthUser, CurrentUser } from '../common/auth.guard';
 import { hashPassword } from '../common/password';
 import { CreditLedger, GradingTask, JudgeRecord, RedeemCode, User } from '../entities';
+import { UnitService } from '../unit.service';
 
 class PageQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
@@ -101,6 +102,7 @@ export class AdminController {
     private readonly billing: BillingService,
     private readonly adapters: AdaptersService,
     private readonly invites: InviteService,
+    private readonly units: UnitService,
   ) {}
 
   @Get('stats')
@@ -190,6 +192,7 @@ export class AdminController {
       }),
     );
     if (dto.credits) u.credits = this.billing.adjust(u.id, dto.credits, 'admin', null, '管理员开户');
+    await this.units.ensurePersonalUnit(u);
     return toPublicUser(u);
   }
 
