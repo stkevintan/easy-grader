@@ -17,6 +17,7 @@ import { hashPassword, verifyPassword } from '../common/password';
 import { APP_CONFIG, AppConfig } from '../config';
 import { UnitMembership, User } from '../entities';
 import { InviteService } from '../invite.service';
+import { UnitService } from '../unit.service';
 
 export interface PublicUser {
   id: number;
@@ -49,6 +50,7 @@ export class AuthService implements OnApplicationBootstrap {
     private readonly billing: BillingService,
     private readonly invites: InviteService,
     @InjectRepository(UnitMembership) private readonly memberships: Repository<UnitMembership>,
+    private readonly units: UnitService,
   ) {}
 
   /** 启动时确保有一个管理员 */
@@ -60,10 +62,11 @@ export class AuthService implements OnApplicationBootstrap {
     if (existing) {
       existing.role = 'admin';
       await this.users.save(existing);
+      await this.units.ensurePersonalUnit(existing);
       this.log.warn(`已把现有用户 ${existing.username} 提升为管理员`);
       return;
     }
-    await this.users.save(
+    const admin = await this.users.save(
       this.users.create({
         username: this.cfg.adminUsername,
         passwordHash: await hashPassword(password),
@@ -71,6 +74,7 @@ export class AuthService implements OnApplicationBootstrap {
         credits: 0,
       }),
     );
+    await this.units.ensurePersonalUnit(admin);
     if (this.cfg.adminPassword) this.log.log(`已创建管理员 ${this.cfg.adminUsername}`);
     else this.log.warn(`已创建管理员 ${this.cfg.adminUsername}，初始密码：${password}（请登录后台尽快修改）`);
   }
@@ -97,6 +101,8 @@ export class AuthService implements OnApplicationBootstrap {
         user.credits = this.billing.adjust(user.id, invite.credits, 'register', null, '邀请注册赠送');
       }
       await manager.getRepository(UnitMembership).save(manager.getRepository(UnitMembership).create({ unitId: invite.unitId, userId: user.id, role: 'grader' }));
+      // 邀请注册同时拥有被邀请单元和个人单元；在同一事务里创建，避免注册成功却没有个人工作区
+      await this.units.ensurePersonalUnit(user, manager);
       return this.issue(user);
     });
   }

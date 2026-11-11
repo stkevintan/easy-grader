@@ -90,8 +90,9 @@ export class AuthGuard implements CanActivate {
       const requestedUnitId = Number(req.headers['x-unit-id'] || req.query.unitId || req.body?.unitId);
       let unitId = Number.isInteger(routeUnitId) && routeUnitId > 0 ? routeUnitId : requestedUnitId;
       if (!Number.isInteger(unitId) || unitId <= 0) {
-        const personal = await this.users.manager.getRepository(UnitMembership).findOne({ where: { userId: user.id, role: 'owner' }, order: { id: 'ASC' } });
-        unitId = personal?.unitId ?? 0;
+        // 默认进入服务端记录的个人单元。不能按“最早的 owner 成员关系”猜：
+        // 用户可能同时拥有组织单元，那样会把新数据写进共享单元。
+        unitId = user.personalUnitId ?? 0;
       }
       if (!Number.isInteger(unitId) || unitId <= 0) throw new ForbiddenException('请指定管理单元');
       if (Number.isInteger(routeUnitId) && routeUnitId > 0 && Number.isInteger(requestedUnitId) && requestedUnitId > 0 && routeUnitId !== requestedUnitId) {

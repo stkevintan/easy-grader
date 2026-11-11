@@ -21,9 +21,13 @@ export class User {
   @Column({ type: 'boolean', default: false }) disabled!: boolean;
   /** 改密码/禁用时 +1，使旧 JWT 失效 */
   @Column({ type: 'integer', default: 0 }) tokenVersion!: number;
+  /** 用户的个人管理单元；由服务端维护，不通过管理接口修改 */
+  @Column({ type: 'integer', nullable: true }) personalUnitId!: number | null;
   @CreateDateColumn() createdAt!: Date;
   @Column({ type: 'datetime', nullable: true }) lastLoginAt!: Date | null;
 }
+
+export type UnitKind = 'shared' | 'personal';
 
 /** 组织/管理单元；数据默认按 unitId 隔离 */
 @Entity('management_units')
@@ -33,6 +37,8 @@ export class ManagementUnit {
   @Column({ type: 'varchar', length: 100 }) name!: string;
   @Column({ type: 'varchar', default: '' }) description!: string;
   @Column({ type: 'integer' }) ownerId!: number;
+  /** personal：注册时自动创建的个人单元；创建后不可修改，也不允许通过管理接口改名成 shared */
+  @Column({ type: 'varchar', default: 'shared' }) kind!: UnitKind;
   @Column({ type: 'boolean', default: true }) enabled!: boolean;
   @CreateDateColumn() createdAt!: Date;
   @UpdateDateColumn() updatedAt!: Date;

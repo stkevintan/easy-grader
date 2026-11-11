@@ -23,6 +23,9 @@ type View = 'login' | 'adapt' | 'task' | 'ready' | 'judging' | 'result' | 'waiti
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
+/** 切换管理单元后，旧单元里启动的异步流程用它中止，避免把旧状态/分数写到新单元 */
+class UnitChangedError extends Error {}
+
 export class Panel {
   private shell: PanelShell | null = null;
   private view: View = 'login';
@@ -48,6 +51,8 @@ export class Panel {
   /** 已经自动判过（含失败）的指纹，避免同一条答卷反复触发 */
   private autoAttempted = '';
   private activeUnitId: number | null = null;
+  /** 每次切换管理单元 +1；异步流程在写状态/写分前比对，过期就直接放弃 */
+  private generation = 0;
 
   get isOpen() {
     return this.shell !== null;
@@ -109,18 +114,26 @@ export class Panel {
   }
 
   async resetForUnitChange() {
+    const gen = ++this.generation;
     this.stopAuto();
-    this.abort?.abort();
     this.task = null;
     this.result = null;
     this.preset = null;
     this.config = null;
+    this.lastImage = '';
+    // 新单元下同一份答卷需要按新单元的评分标准重新判，旧指纹和自动判题记录必须一起清掉
+    this.lastFingerprint = '';
+    this.autoAttempted = '';
+    this.judgeCandidate = '';
+    this.judgeCandidateAt = 0;
     this.activeUnitId = null;
     this.view = 'login';
     this.notice = { kind: 'info', text: '管理单元已切换，请刷新面板状态。' };
     if (this.shell) {
       await this.refreshUser();
+      if (gen !== this.generation) return;
       if (this.user) await this.loadAdapter();
+      if (gen !== this.generation) return;
       this.render();
     }
   }
@@ -486,6 +499,7 @@ export class Panel {
   /** 读答卷 → 请求评分；返回 null 表示失败（已显示错误） */
   private async judgeOnce(force = false, preCaptured?: string): Promise<JudgeResult | null> {
     if (!this.config || !this.task) return null;
+    const gen = this.generation;
     this.notice = null;
     this.go('judging');
     try {
@@ -495,16 +509,19 @@ export class Panel {
         throw new AdapterError(`页面题号变成了「${info.questionNo}」，与当前任务「${this.task.questionNo}」不一致，请到「题目设置」确认`);
       }
       const image = preCaptured ?? (await captureAnswer(this.config.pics));
+      if (gen !== this.generation) return null;
       this.lastImage = image;
       // 抓完图再记指纹：图片还在加载、画布正被清空时读到的是过渡状态，会让写分校验误判
       this.lastFingerprint = fingerprint(this.config);
       const r = await bg<JudgeResult>({ cmd: 'judge.run', taskId: this.task.id, image, force });
+      if (gen !== this.generation) return null; // 期间切换了管理单元
       if (this.view !== 'judging') return null; // 期间被取消
       this.result = r;
       if (this.user) this.user.credits = r.balance;
       this.go('result');
       return r;
     } catch (e) {
+      if (gen !== this.generation) return null;
       this.stopAuto();
       this.setNotice('error', errText(e));
       this.go('ready');
@@ -513,14 +530,22 @@ export class Panel {
   }
 
   private async commitScore(score: number, andNext: boolean, autoSubmitted: boolean): Promise<boolean> {
-    const cfg = this.config!;
-    const r = this.result!;
+    const cfg = this.config;
+    const r = this.result;
+    if (!cfg || !r) return false;
+    const gen = this.generation;
+    /** 每个 await 之后确认仍停在同一个管理单元，否则立刻放弃后续写分/提交 */
+    const sameUnit = () => {
+      if (gen !== this.generation) throw new UnitChangedError();
+    };
     try {
+      sameUnit();
       // 写分前再确认一次答卷没变，防止把分数写到另一份卷子上
       if (isTransientFingerprint(this.lastFingerprint)) {
         console.warn('[EasyGrader] 评分时答卷指纹处于过渡状态，跳过写分前校验', this.lastFingerprint);
       } else {
         const now = await confirmUnchanged(cfg, this.lastFingerprint);
+        sameUnit();
         if (now !== null) {
           // 指纹可能只是页面重绘引起的抖动，以真正抓到的答卷图片为准
           let image: string;
@@ -529,21 +554,27 @@ export class Panel {
           } catch {
             throw new AdapterError('页面上的答卷已经变了，本次评分作废，请重新获取建议分');
           }
+          sameUnit();
           if (image === this.lastImage) {
             console.warn('[EasyGrader] 指纹变化但答卷图片一致，按原评分写入', { expected: this.lastFingerprint, now });
           } else {
             // 真的换卷了：自动对当前这份重新评分，由老师核对后再写入
             console.warn('[EasyGrader] 答卷已变化，自动重新评分', { expected: this.lastFingerprint, now });
             const again = await this.judgeOnce(false, image);
+            sameUnit();
             if (again) this.setNotice('warn', '页面上的答卷已变化，已自动重新评分，请核对分数后再写入');
             return false;
           }
         }
       }
+      sameUnit();
       setScore(cfg, score, r.maxScore);
       await new Promise((res) => setTimeout(res, 120));
+      sameUnit();
       if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
+      sameUnit();
       await bg({ cmd: 'record.confirm', recordId: r.recordId, finalScore: score, autoSubmitted }).catch(() => undefined);
+      sameUnit();
       if (!andNext) {
         this.setNotice('ok', `已写入 ${fmt(score)} 分，请在平台上检查后手动提交`);
         this.go('ready');
@@ -552,19 +583,26 @@ export class Panel {
       this.go('waiting');
       const before = fingerprintParts(cfg);
       const rejectBefore = rejectText();
+      sameUnit();
       await submit(cfg);
       // 平台只认真实键盘输入时会拒绝程序化写入，并提示「分数不能为空」：改用键盘事件重写后重新提交
       const rejected = await waitRejectChange(rejectBefore);
+      sameUnit();
       if (rejected) {
         console.warn(`[EasyGrader] 平台拒绝提交：${rejected}，改用键盘输入重写分数`);
         this.setNotice('warn', `平台提示「${rejected}」，正在重写分数…`);
         await typeScore(cfg, score);
+        sameUnit();
         await new Promise((res) => setTimeout(res, 150));
+        sameUnit();
         if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
+        sameUnit();
         await submit(cfg);
       }
+      sameUnit();
       this.sessionCount += 1;
       const changed = await waitForNext(cfg, before, this.abort?.signal);
+      sameUnit();
       if (!changed) {
         this.stopAuto();
         const stillRejected = rejectText();
@@ -581,6 +619,7 @@ export class Panel {
       this.go('ready');
       return true;
     } catch (e) {
+      if (e instanceof UnitChangedError) return false; // 面板已经由 resetForUnitChange 接管，不再改状态
       this.stopAuto();
       this.setNotice('error', errText(e));
       this.go('result');

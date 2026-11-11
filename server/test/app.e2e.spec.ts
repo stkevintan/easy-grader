@@ -1,15 +1,19 @@
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import request from 'supertest';
+import { Repository } from 'typeorm';
 import { mkdtempSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AppModule } from '../src/app.module';
 import { loadConfig } from '../src/config';
 import { configureApp, isAllowedOrigin } from '../src/main';
+import { ManagementUnit, User } from '../src/entities';
 import { buildOcrPrompt, buildPrompt, extractJson, isBlankOcr, ModelOutputError, ModelService, parseVerdict, snapScore } from '../src/judge/model.service';
 import { pickGoldExamples } from '../src/judge/gold.service';
 import { hostMatches, normalizeHostPattern } from '../src/adapters/adapter-config';
+import { UnitService } from '../src/unit.service';
 
 /** 一张 1x1 透明 PNG 太小（<100 字节会被拒），这里拼一张足够大的合法 data URL */
 function fakePng(seed: string): string {
@@ -672,5 +676,168 @@ describe('纯函数', () => {
     expect(isAllowedOrigin('https://evil.com', [])).toBe(false);
     expect(isAllowedOrigin('https://ok.com', ['https://ok.com'])).toBe(true);
     expect(isAllowedOrigin(undefined, [])).toBe(true);
+  });
+});
+
+describe('管理单元：个人工作区、共享与默认单元', () => {
+  let app: INestApplication;
+  let http: ReturnType<typeof request>;
+  let adminToken: string;
+  let sharedUnitId: number;
+  let aId: number;
+  let aToken: string;
+  let aPersonal: number;
+  let bId: number;
+  let bToken: string;
+  const PASSWORD = 'password-123';
+
+  const h = (token: string) => ({ authorization: `Bearer ${token}` });
+  const hu = (token: string, unitId: number) => ({ authorization: `Bearer ${token}`, 'x-unit-id': String(unitId) });
+  const taskBody = (host: string, questionNo = '1') => ({
+    platformHost: host,
+    examTitle: '单元测试',
+    questionNo,
+    subject: '语文',
+    maxScore: 5,
+    referenceAnswer: '参考答案',
+    rubric: '答出要点得满分',
+  });
+
+  beforeAll(async () => {
+    const cfg = loadConfig({
+      DB_PATH: ':memory:',
+      ADMIN_USERNAME: 'admin',
+      ADMIN_PASSWORD: 'admin-test-pass',
+      RATE_LIMIT_DEFAULT: '10000',
+      RATE_LIMIT_AUTH: '10000',
+      RATE_LIMIT_JUDGE: '10000',
+    } as NodeJS.ProcessEnv);
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    app = mod.createNestApplication({ logger: false });
+    configureApp(app, cfg);
+    await app.init();
+    http = request(app.getHttpServer());
+
+    const admin = await http.post('/api/auth/login').send({ username: 'admin', password: 'admin-test-pass' }).expect(200);
+    adminToken = admin.body.token;
+    const unit = await http.post('/api/admin/units').set(h(adminToken)).send({ name: '共享阅卷单元' }).expect(201);
+    sharedUnitId = unit.body.id;
+
+    const invA = await http
+      .post('/api/admin/invites')
+      .set(h(adminToken))
+      .send({ unitId: sharedUnitId, count: 1, maxUses: 1, credits: 5, expiresAt: new Date(Date.now() + 86400000).toISOString() })
+      .expect(201);
+    const invB = await http
+      .post('/api/admin/invites')
+      .set(h(adminToken))
+      .send({ unitId: sharedUnitId, count: 1, maxUses: 1, credits: 10, expiresAt: new Date(Date.now() + 86400000).toISOString() })
+      .expect(201);
+    const a = await http.post('/api/auth/register').send({ username: 'unit_a', password: PASSWORD, inviteToken: invA.body.tokens[0].token }).expect(201);
+    const b = await http.post('/api/auth/register').send({ username: 'unit_b', password: PASSWORD, inviteToken: invB.body.tokens[0].token }).expect(201);
+    aToken = a.body.token;
+    aId = a.body.user.id;
+    bToken = b.body.token;
+    bId = b.body.user.id;
+
+    const users = app.get<Repository<User>>(getRepositoryToken(User));
+    aPersonal = (await users.findOneByOrFail({ id: aId })).personalUnitId!;
+  });
+
+  afterAll(async () => {
+    await app?.close();
+  });
+
+  it('邀请注册同时拥有被邀请单元和个人单元', async () => {
+    const r = await http.get('/api/units').set(h(aToken)).expect(200);
+    expect(r.body.find((u: any) => u.id === sharedUnitId)).toMatchObject({ role: 'grader' });
+    expect(r.body.find((u: any) => u.id === aPersonal)).toMatchObject({ role: 'owner' });
+    expect(aPersonal).toBeGreaterThan(0);
+  });
+
+  it('不带 X-Unit-Id 时默认写入个人单元，而不是共享单元', async () => {
+    const t = await http.put('/api/tasks').set(h(aToken)).send(taskBody('personal.example')).expect(200);
+    expect(t.body.unitId).toBe(aPersonal);
+    const list = await http.get('/api/tasks').set(h(aToken)).expect(200);
+    expect(list.body.map((x: any) => x.id)).toContain(t.body.id);
+    // 共享单元里看不到这条任务
+    const shared = await http.get('/api/tasks').set(hu(aToken, sharedUnitId)).expect(200);
+    expect(shared.body.map((x: any) => x.id)).not.toContain(t.body.id);
+  });
+
+  it('管理员开户也会创建个人单元', async () => {
+    await http.post('/api/admin/users').set(h(adminToken)).send({ username: 'created_by_admin', password: PASSWORD }).expect(201);
+    const login = await http.post('/api/auth/login').send({ username: 'created_by_admin', password: PASSWORD }).expect(200);
+    const units = await http.get('/api/units').set(h(login.body.token)).expect(200);
+    expect(units.body).toHaveLength(1);
+    expect(units.body[0].role).toBe('owner');
+    const t = await http.put('/api/tasks').set(h(login.body.token)).send(taskBody('admin-created.example')).expect(200);
+    expect(t.body.unitId).toBe(units.body[0].id);
+  });
+
+  it('同时拥有共享单元的管理员，默认仍写个人单元', async () => {
+    const users = app.get<Repository<User>>(getRepositoryToken(User));
+    const admin = await users.findOneByOrFail({ username: 'admin' });
+    expect(admin.personalUnitId).toBeGreaterThan(0);
+    const t = await http.put('/api/tasks').set(h(adminToken)).send(taskBody('admin-personal.example')).expect(200);
+    expect(t.body.unitId).toBe(admin.personalUnitId);
+    expect(t.body.unitId).not.toBe(sharedUnitId);
+  });
+
+  it('改名/改描述后仍认得出个人单元，不会重复创建', async () => {
+    const units = app.get<Repository<ManagementUnit>>(getRepositoryToken(ManagementUnit));
+    await http
+      .patch(`/api/admin/units/${aPersonal}`)
+      .set(h(adminToken))
+      .send({ name: '改名后的个人单元', description: '老师自己改的描述' })
+      .expect(200);
+    const users = app.get<Repository<User>>(getRepositoryToken(User));
+    const user = await users.findOneByOrFail({ id: aId });
+    const again = await app.get(UnitService).ensurePersonalUnit(user);
+    expect(again.id).toBe(aPersonal);
+    expect(again.kind).toBe('personal');
+    expect(await units.findBy({ ownerId: aId, kind: 'personal' })).toHaveLength(1);
+    expect((await users.findOneByOrFail({ id: aId })).personalUnitId).toBe(aPersonal);
+  });
+
+  it('同单元成员共享任务；缓存的评分余额按请求者计算', async () => {
+    const t = await http.put('/api/tasks').set(hu(aToken, sharedUnitId)).send(taskBody('shared.example', '17')).expect(200);
+    const lookup = await http
+      .get('/api/tasks/lookup')
+      .query({ platformHost: 'shared.example', examTitle: '单元测试', questionNo: '17' })
+      .set(hu(bToken, sharedUnitId))
+      .expect(200);
+    expect(lookup.body.task?.id).toBe(t.body.id);
+
+    const img = fakePng('shared-paper');
+    const byB = await http.post('/api/judge').set(hu(bToken, sharedUnitId)).send({ taskId: t.body.id, image: img }).expect(200);
+    expect(byB.body.balance).toBe(9); // B 自己的 10 次，扣掉本次
+    const byA = await http.post('/api/judge').set(hu(aToken, sharedUnitId)).send({ taskId: t.body.id, image: img }).expect(200);
+    expect(byA.body.cached).toBe(true); // 复用 B 的评分结果
+    expect(byA.body.recordId).toBe(byB.body.recordId);
+    expect(byA.body.balance).toBe(5); // 余额仍是 A 自己的 5 次，不是 B 的 9
+
+    await http.post(`/api/records/${byB.body.recordId}/confirm`).set(hu(aToken, sharedUnitId)).send({ finalScore: 4, autoSubmitted: false }).expect(200);
+  });
+
+  it('viewer 可以读，但不能改任务或发起评分', async () => {
+    await http
+      .patch(`/api/admin/units/${sharedUnitId}/members/${bId}`)
+      .set(h(adminToken))
+      .send({ username: 'unit_b', role: 'viewer' })
+      .expect(200);
+    await http.get('/api/tasks').set(hu(bToken, sharedUnitId)).expect(200);
+    await http.put('/api/tasks').set(hu(bToken, sharedUnitId)).send(taskBody('viewer.example', '3')).expect(403);
+    await http.post('/api/judge').set(hu(bToken, sharedUnitId)).send({ taskId: 1, image: fakePng('viewer') }).expect(403);
+    // grader 仍然可以写
+    await http.put('/api/tasks').set(hu(aToken, sharedUnitId)).send(taskBody('grader.example', '4')).expect(200);
+  });
+
+  it('成员列表按路由里的 unitId 鉴权，不会回退到个人单元', async () => {
+    await http.get(`/api/admin/units/${sharedUnitId}/members`).set(h(adminToken)).expect(200);
+    await http.post('/api/admin/users').set(h(adminToken)).send({ username: 'other_admin', password: PASSWORD, role: 'admin' }).expect(201);
+    const other = await http.post('/api/auth/login').send({ username: 'other_admin', password: PASSWORD }).expect(200);
+    // 是管理员、也有自己的个人单元，但不是共享单元成员
+    await http.get(`/api/admin/units/${sharedUnitId}/members`).set(h(other.body.token)).expect(403);
   });
 });

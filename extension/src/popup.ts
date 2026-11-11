@@ -209,8 +209,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   $('save-settings').addEventListener('click', saveSettings);
   $('unit-select').addEventListener('change', async () => {
     try {
+      // 内容脚本直接监听 activeUnitId 的 storage 变化，所有打开的阅卷页都会自行重置
       await bg({ cmd: 'unit.set', unitId: Number($<HTMLSelectElement>('unit-select').value) });
-      if (tab?.id) await chrome.tabs.sendMessage(tab.id, { cmd: 'panel.unitChanged' }).catch(() => undefined);
       say('unit-msg', 'ok', '管理单元已切换');
     } catch (e) {
       say('unit-msg', 'error', errText(e));

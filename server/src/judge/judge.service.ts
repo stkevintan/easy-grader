@@ -135,12 +135,16 @@ export class JudgeService {
         where: { unitId, taskId, imageSha256: sha256, status: 'done' },
         order: { id: 'DESC' },
       });
-      if (prev) return this.view(prev, task, true);
+      if (prev) return this.view(prev, task, true, {}, userId);
     }
 
     const key = `${unitId}:${taskId}:${sha256}`;
     const running = this.inflight.get(key);
-    if (running) return running;
+    if (running) {
+      // 评分结果可以在单元内共享，但余额是每个人自己的，不能沿用发起者的
+      const shared = await running;
+      return { ...shared, balance: this.billing.balance(userId) };
+    }
     const p = this.runJudge(userId, unitId, task, image, sha256).finally(() => this.inflight.delete(key));
     this.inflight.set(key, p);
     return p;
@@ -176,7 +180,7 @@ export class JudgeService {
         latencyMs: Date.now() - started,
       });
       rec = await this.records.save(rec);
-      return this.view(rec, task, false, { samples: v.samples, scoreSpread: v.spread });
+      return this.view(rec, task, false, { samples: v.samples, scoreSpread: v.spread }, userId);
     } catch (e) {
       this.billing.adjust(userId, 1, 'refund', rec.id, '评分失败退还');
       rec.charged = false;
@@ -196,6 +200,7 @@ export class JudgeService {
     task: GradingTask,
     cached: boolean,
     extra: { samples?: number[]; scoreSpread?: number } = {},
+    balanceUserId = r.userId,
   ): JudgeResultView {
     return {
       recordId: r.id,
@@ -208,7 +213,7 @@ export class JudgeService {
       ocrText: r.ocrText,
       model: r.model,
       cached,
-      balance: this.billing.balance(r.userId),
+      balance: this.billing.balance(balanceUserId),
       ...extra,
     };
   }
