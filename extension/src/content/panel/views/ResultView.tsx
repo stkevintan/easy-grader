@@ -20,6 +20,9 @@ export function ResultView({ task, result: r }: Props) {
   const confClass = r.confidence >= 0.8 ? 'high' : r.confidence >= 0.6 ? 'mid' : 'low';
   // 全自动因置信度低等原因暂停在这一份：主按钮换成「确认并继续自动」
   const paused = mode.value === 'auto' && autoPaused.value;
+  // 识别文字默认显示，过长时只露前几行，可展开
+  const ocrOpen = useSignal(false);
+  const ocrLong = !!r.ocr && (r.ocr.length > 120 || r.ocr.split('\n').length > 4);
 
   const parsed = (): number | null => {
     const v = Number(score.value);
@@ -82,10 +85,17 @@ export function ResultView({ task, result: r }: Props) {
       ) : null}
       {r.comment && <p>{r.comment}</p>}
       {r.ocr && (
-        <details>
-          <summary>识别出的答卷文字</summary>
-          <pre class="ocr">{r.ocr}</pre>
-        </details>
+        <div class="ocr-box">
+          <div class="ocr-head">
+            <span>识别出的答卷文字</span>
+            {ocrLong && (
+              <button type="button" class="link" onClick={() => { ocrOpen.value = !ocrOpen.value; }}>
+                {ocrOpen.value ? '收起' : '展开全文'}
+              </button>
+            )}
+          </div>
+          <pre class={`ocr${ocrLong && !ocrOpen.value ? ' clamp' : ''}`}>{r.ocr}</pre>
+        </div>
       )}
       <div class="foot">
         <button class="btn primary grow" disabled={busy.value} onClick={() => void primary()}>

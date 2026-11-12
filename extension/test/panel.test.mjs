@@ -198,3 +198,25 @@ test('上一次提交还没结束时，不能重新开始全自动', async () =>
   p.controller.resumeAuto();
   assert.equal(p.controller.isAuto.value, false);
 });
+
+test('识别文字默认显示；过长时截断，可展开/收起', async () => {
+  const { p, flush, buttons, click, app } = await setup();
+  p.store.state.value = { view: 'result', task, result: { ...result, ocr: '短答案' } };
+  await flush();
+  const pre = () => app.querySelector('pre.ocr');
+  assert.equal(pre().textContent, '短答案');
+  assert.ok(!pre().classList.contains('clamp'));
+  assert.ok(!buttons().includes('展开全文'));
+
+  p.store.state.value = { view: 'ready', task };
+  await flush();
+  p.store.state.value = { view: 'result', task, result: { ...result, ocr: '长'.repeat(300) } };
+  await flush();
+  assert.ok(pre().classList.contains('clamp'));
+  click('展开全文');
+  await flush();
+  assert.ok(!pre().classList.contains('clamp'));
+  click('收起');
+  await flush();
+  assert.ok(pre().classList.contains('clamp'));
+});

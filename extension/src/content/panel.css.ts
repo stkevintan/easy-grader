@@ -60,7 +60,12 @@ ul.reasons li { margin: 2px 0; }
 details { margin-top: 6px; }
 summary { cursor: pointer; color: #475569; font-size: 12px; }
 pre.ocr { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radius: 6px;
-  font: 12px/1.5 inherit; max-height: 160px; overflow: auto; margin: 6px 0 0; }
+  font: 12px/1.5 inherit; max-height: 160px; overflow: auto; margin: 4px 0 0; }
+pre.ocr.clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4;
+  overflow: hidden; max-height: none; }
+.ocr-box { margin-top: 6px; }
+.ocr-head { display: flex; justify-content: space-between; align-items: center; color: #475569; font-size: 12px; }
+button.link { border: 0; background: none; padding: 0; color: #2563eb; font: inherit; cursor: pointer; }
 .steps { margin: 0; padding: 0; list-style: none; }
 .steps li { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-bottom: 1px dashed #e2e8f0; }
 .steps li:last-child { border-bottom: 0; }
