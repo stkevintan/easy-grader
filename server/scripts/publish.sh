@@ -98,5 +98,9 @@ docker buildx build \
 if [[ -n "${DRY_RUN:-}" ]]; then
   echo "已构建到本地：docker run --rm -p 3000:3000 -e ADMIN_PASSWORD=... ${IMAGES[0]}:$VERSION"
 else
-  echo "已推送：${IMAGES[*]} 的 $VERSION${VERSION/*-*/（预发布，未更新 latest）}"
+  if [[ "$VERSION" == *-* ]]; then
+    echo "已推送：${IMAGES[*]} 的 $VERSION（预发布，未更新 latest）"
+  else
+    echo "已推送：${IMAGES[*]} 的 $VERSION 和 latest"
+  fi
 fi
