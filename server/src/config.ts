@@ -95,7 +95,8 @@ export function parseModelProfiles(raw: string | undefined): Record<string, Part
       if (!want) throw new Error(`MODEL_PROFILES.${name} 不支持字段 ${k}`);
       if (typeof x !== want || (want === 'number' && !Number.isFinite(x))) throw new Error(`MODEL_PROFILES.${name}.${k} 应为 ${want}`);
       if (want === 'string' && ['baseUrl', 'apiKey', 'name'].includes(k) && !(x as string).trim()) throw new Error(`MODEL_PROFILES.${name}.${k} 不能为空`);
-      if (k === 'timeoutMs' && !(Number.isInteger(x) && (x as number) >= 1000 && (x as number) <= 600_000)) throw new Error(`MODEL_PROFILES.${name}.timeoutMs 应为 1000–600000 的整数`);
+      // 上限 60 秒：两阶段 + 重试的总时间要留在扩展评分请求的 240 秒期限内
+      if (k === 'timeoutMs' && !(Number.isInteger(x) && (x as number) >= 1000 && (x as number) <= 60_000)) throw new Error(`MODEL_PROFILES.${name}.timeoutMs 应为 1000–60000 的整数`);
       if (k === 'temperature' && !((x as number) >= 0 && (x as number) <= 2)) throw new Error(`MODEL_PROFILES.${name}.temperature 应在 0–2 之间`);
       if ((k === 'maxTokens' || k === 'sampleCount') && !(Number.isInteger(x) && (x as number) >= 1)) throw new Error(`MODEL_PROFILES.${name}.${k} 应为正整数`);
       p[k] = k === 'baseUrl' && typeof x === 'string' ? x.replace(/\/+$/, '') : k === 'reasoningEffort' ? resolveReasoningEffort(String(x)) : x;

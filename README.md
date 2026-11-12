@@ -298,7 +298,7 @@ docker compose up -d
 
 扩展在登录、打开面板、开启全自动前和全自动每一份之前读开关（后台缓存 5 分钟，面板开着时每 5 分钟刷新）。拉取失败用上次的缓存；从没拉到过时按保守取值，全自动不可用。服务端每个进程缓存 10 秒。
 
-模型方案在 `MODEL_PROFILES` 里定义，是一个 JSON 对象，每个方案覆盖 `MODEL_*` 的一部分字段（`baseUrl`、`apiKey`、`name`、`timeoutMs`、`temperature`、`maxTokens`、`reasoningEffort`、`scoreWithImage`、`sampleCount`），没写的沿用 `MODEL_*`：
+模型方案在 `MODEL_PROFILES` 里定义，是一个 JSON 对象，每个方案覆盖 `MODEL_*` 的一部分字段（`baseUrl`、`apiKey`、`name`、`timeoutMs`、`temperature`、`maxTokens`、`reasoningEffort`、`scoreWithImage`、`sampleCount`），没写的沿用 `MODEL_*`（`timeoutMs` 最多 60000，保证重试也能在扩展的评分期限内完成）：
 
 ```bash
 MODEL_PROFILES='{"qwen-max":{"name":"qwen-vl-max","sampleCount":3},"fast":{"reasoningEffort":"none"}}'

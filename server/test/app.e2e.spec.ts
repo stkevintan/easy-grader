@@ -943,6 +943,7 @@ describe('纯函数', () => {
     expect(() => parseModelProfiles('{"a": {"apiKey": ""}}')).toThrow('不能为空');
     expect(() => parseModelProfiles('{"a": {"timeoutMs": -1}}')).toThrow('timeoutMs');
     expect(() => parseModelProfiles('{"a": {"timeoutMs": 0.5}}')).toThrow('timeoutMs');
+    expect(() => parseModelProfiles('{"a": {"timeoutMs": 300000}}')).toThrow('timeoutMs');
     expect(() => parseModelProfiles('{"a": {"sampleCount": 2.5}}')).toThrow('正整数');
   });
 
