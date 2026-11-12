@@ -1,15 +1,23 @@
 #!/usr/bin/env bash
-# 构建 linux/amd64 镜像并推送到 GHCR（公开仓库）。
+# 构建 linux/amd64 镜像并同时推送到 Docker Hub 和 GHCR。
 #
-#   gh auth token | docker login ghcr.io -u stkevintan --password-stdin   # 首次
-#   ./server/scripts/publish.sh        # 推送 <版本> 和 latest 两个 tag
+#   docker login                                   # 首次，Docker Hub
+#   gh auth token | docker login ghcr.io -u stkevintan --password-stdin
+#   ./server/scripts/publish.sh        # 推送 <版本> 和 latest
 #   ./server/scripts/publish.sh 0.2.0  # 指定版本
-#   DRY_RUN=1 ./server/scripts/publish.sh   # 只构建不推送
+#   DRY_RUN=1 ./server/scripts/publish.sh   # 只构建到本地，不推送
 #
 # 版本默认取 server/package.json 的 version。
+# 只推一个地址：IMAGE=ghcr.io/stkevintan/easy-grader-server ./server/scripts/publish.sh
 set -euo pipefail
 
-IMAGE="${IMAGE:-ghcr.io/stkevintan/easy-grader-server}"
+# 默认同时推 Docker Hub（compose 用这个，国内有镜像加速）和 GHCR。
+# IMAGE 显式指定时只推那一个，方便临时只发一个 registry。
+if [[ -n "${IMAGE:-}" ]]; then
+  IMAGES=("$IMAGE")
+else
+  IMAGES=(stkevintan/easy-grader-server ghcr.io/stkevintan/easy-grader-server)
+fi
 PLATFORM="${PLATFORM:-linux/amd64}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -25,33 +33,48 @@ REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 command -v docker >/dev/null || { echo "未找到 docker" >&2; exit 1; }
 docker buildx version >/dev/null 2>&1 || { echo "需要 docker buildx（Docker Desktop 自带）" >&2; exit 1; }
 
-# 推送前确认已登录 IMAGE 所在的 registry，避免构建完才发现推不上去。
+# 推送前确认已登录每个镜像所在的 registry，避免构建完才发现推不上去。
 # 镜像名第一段带 . 或 : 才是 registry（ghcr.io/...），否则是 Docker Hub。
-REGISTRY="${IMAGE%%/*}"
-[[ "$IMAGE" == */* && ( "$REGISTRY" == *.* || "$REGISTRY" == *:* ) ]] || REGISTRY="docker.io"
-registry_logged_in() {
-  local cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
-  [[ -f "$cfg" ]] || return 1
-  if [[ "$REGISTRY" == "docker.io" ]]; then
-    grep -Eq '"(https://index\.docker\.io/v1/|index\.docker\.io|docker\.io|registry-1\.docker\.io)"' "$cfg"
+registry_of() {
+  local image="$1" registry="${1%%/*}"
+  if [[ "$image" == */* && ( "$registry" == *.* || "$registry" == *:* ) ]]; then
+    echo "$registry"
   else
-    grep -Fq "\"$REGISTRY\"" "$cfg"
+    echo docker.io
   fi
 }
-if [[ -z "${DRY_RUN:-}" ]] && ! registry_logged_in; then
-  echo "看起来还没登录 $REGISTRY，请先执行：" >&2
-  if [[ "$REGISTRY" == "ghcr.io" ]]; then
-    echo "  gh auth token | docker login ghcr.io -u stkevintan --password-stdin" >&2
+registry_logged_in() {
+  local registry="$1" cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
+  [[ -f "$cfg" ]] || return 1
+  if [[ "$registry" == "docker.io" ]]; then
+    grep -Eq '"(https://index\.docker\.io/v1/|index\.docker\.io|docker\.io|registry-1\.docker\.io)"' "$cfg"
   else
-    echo "  docker login $REGISTRY" >&2
+    grep -Fq "\"$registry\"" "$cfg"
   fi
-  echo "（如果确定已登录，可以用 SKIP_LOGIN_CHECK=1 跳过这项检查）" >&2
-  [[ -n "${SKIP_LOGIN_CHECK:-}" ]] || exit 1
+}
+if [[ -z "${DRY_RUN:-}" ]]; then
+  for image in "${IMAGES[@]}"; do
+    registry="$(registry_of "$image")"
+    registry_logged_in "$registry" && continue
+    echo "看起来还没登录 $registry，请先执行：" >&2
+    if [[ "$registry" == "ghcr.io" ]]; then
+      echo "  gh auth token | docker login ghcr.io -u stkevintan --password-stdin" >&2
+    elif [[ "$registry" == "docker.io" ]]; then
+      echo "  docker login" >&2
+    else
+      echo "  docker login $registry" >&2
+    fi
+    echo "（如果确定已登录，可以用 SKIP_LOGIN_CHECK=1 跳过这项检查）" >&2
+    [[ -n "${SKIP_LOGIN_CHECK:-}" ]] || exit 1
+  done
 fi
 
-TAGS=(-t "$IMAGE:$VERSION")
-# 预发布版本（带 -rc 等后缀）不覆盖 latest
-[[ "$VERSION" == *-* ]] || TAGS+=(-t "$IMAGE:latest")
+TAGS=()
+for image in "${IMAGES[@]}"; do
+  TAGS+=(-t "$image:$VERSION")
+  # 预发布版本（带 -rc 等后缀）不覆盖 latest
+  [[ "$VERSION" == *-* ]] || TAGS+=(-t "$image:latest")
+done
 
 OUTPUT=(--push)
 if [[ -n "${DRY_RUN:-}" ]]; then
@@ -59,7 +82,7 @@ if [[ -n "${DRY_RUN:-}" ]]; then
   OUTPUT=(--load)
 fi
 
-echo "构建 $IMAGE:$VERSION（$PLATFORM，提交 $REVISION）"
+echo "构建 ${IMAGES[*]}:$VERSION（$PLATFORM，提交 $REVISION）"
 docker buildx build \
   --platform "$PLATFORM" \
   -f server/Dockerfile \
@@ -73,8 +96,7 @@ docker buildx build \
   .
 
 if [[ -n "${DRY_RUN:-}" ]]; then
-  echo "已构建到本地：docker run --rm -p 3000:3000 -e ADMIN_PASSWORD=... $IMAGE:$VERSION"
+  echo "已构建到本地：docker run --rm -p 3000:3000 -e ADMIN_PASSWORD=... ${IMAGES[0]}:$VERSION"
 else
-  echo "已推送：$IMAGE:$VERSION${TAGS[2]:+ 和 latest}"
-  echo "仓库地址：https://github.com/stkevintan/easy-grader/pkgs/container/easy-grader-server"
+  echo "已推送：${IMAGES[*]} 的 $VERSION${VERSION/*-*/（预发布，未更新 latest）}"
 fi
