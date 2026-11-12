@@ -181,15 +181,19 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
       console.warn('[EasyGrader] 答卷指纹处于过渡状态，跳过写分前校验', lastFingerprint.value);
     } else {
       const now = await confirmUnchanged(cfg, lastFingerprint.value);
+      if (cancel?.aborted) return false;
       if (now !== null) {
         let image: string;
         try { image = await captureAnswer(cfg.pics); } catch {
+          if (cancel?.aborted) return false;
           throw new AdapterError('页面上的答卷已经变了，本次评分作废，请重新获取建议分');
         }
         if (image === lastImage.value) {
           console.warn('[EasyGrader] 指纹变化但图片一致，按原评分写入', { expected: lastFingerprint.value, now });
         } else {
           console.warn('[EasyGrader] 答卷已变化，自动重新评分', { expected: lastFingerprint.value, now });
+          // 已被停止：不要再发起一次扣费的重新评分
+          if (cancel?.aborted) return false;
           const again = await judgeOnce(false, image);
           if (again) setNotice('warn', '页面上的答卷已变化，已自动重新评分，请核对分数后再写入');
           return false;
@@ -340,7 +344,9 @@ export async function confirmAndContinue(score: number) {
   abortController = ctrl;
   const ok = await commitScore(score, true, false, ctrl.signal);
   if (abortController === ctrl) abortController = null;
-  if (ctrl.signal.aborted || mode.value !== 'auto') return;
+  // 老师停止/切模式/关面板都会把 mode 改掉：这时什么都不做，不覆盖新的选择。
+  // ctrl 也可能被 commitScore 内部失败时的 stopAuto() 中止，那属于失败，要走下面的清理。
+  if (mode.value !== 'auto') return;
   if (!ok) {
     // 提交失败（错误提示已由 commitScore 给出）：和循环里的失败一样回到手动
     autoPaused.value = false;
