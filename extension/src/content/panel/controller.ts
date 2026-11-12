@@ -159,7 +159,11 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
   }
 }
 
-export async function commitScore(score: number, andNext: boolean, autoSubmitted: boolean): Promise<boolean> {
+/**
+ * cancel：全自动循环传入自己的 AbortSignal。老师切走模式/停止后，
+ * 在每一步写分、确认、提交之前检查它，不再继续对平台产生副作用。
+ */
+export async function commitScore(score: number, andNext: boolean, autoSubmitted: boolean, cancel?: AbortSignal): Promise<boolean> {
   const cur = state.value;
   if (cur.view !== 'result') return false;
   const { task, result: r } = cur;
@@ -186,6 +190,7 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
         }
       }
     }
+    if (cancel?.aborted) return false;
     setScore(cfg, score, r.maxScore);
     await new Promise<void>((res) => setTimeout(res, 120));
     if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
@@ -204,6 +209,7 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
       setNotice('warn', `上一份的服务端记录确认失败：${errText(e)}`);
     }
 
+    if (cancel?.aborted) return false;
     if (!andNext) {
       setNotice('ok', `已写入 ${fmt(score)} 分，请在平台上检查后手动提交`);
       state.value = { view: 'ready', task };
@@ -217,13 +223,16 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
     if (rejected) {
       console.warn(`[EasyGrader] 平台拒绝提交：${rejected}，改用键盘输入重写`);
       setNotice('warn', `平台提示「${rejected}」，正在重写分数…`);
+      if (cancel?.aborted) return false;
       await typeScore(cfg, score);
       await new Promise<void>((res) => setTimeout(res, 150));
       if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
+      if (cancel?.aborted) return false;
       await submit(cfg);
     }
     sessionCount.value += 1;
-    const changed = await waitForNext(cfg, before, abortController?.signal);
+    const changed = await waitForNext(cfg, before, cancel ?? abortController?.signal);
+    if (cancel?.aborted) return false;
     if (!changed) {
       stopAuto();
       const stillRejected = rejectText();
@@ -319,7 +328,13 @@ function startAuto() {
 /** 低置信度暂停后：老师确认这一份的分数，提交后继续循环 */
 export async function confirmAndContinue(score: number) {
   const ok = await commitScore(score, true, false);
-  if (!ok || mode.value !== 'auto') return;
+  if (mode.value !== 'auto') return;
+  if (!ok) {
+    // 提交失败（错误提示已由 commitScore 给出）：和循环里的失败一样回到手动
+    autoPaused.value = false;
+    mode.value = 'manual';
+    return;
+  }
   autoPaused.value = false;
   void runAuto();
 }
@@ -351,7 +366,7 @@ export async function runAuto() {
       setNotice('warn', `置信度 ${Math.round(r.confidence * 100)}% 较低，已暂停。核对分数后点「确认并继续自动」，或切回手动`);
       break;
     }
-    const ok = await commitScore(r.score, true, true);
+    const ok = await commitScore(r.score, true, true, signal);
     if (!ok || !isAuto.value || signal.aborted) break;
     const wait = s.autoIntervalMs - (Date.now() - started);
     if (wait > 0) await new Promise<void>((res) => setTimeout(res, wait));

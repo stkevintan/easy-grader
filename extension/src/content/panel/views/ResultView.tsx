@@ -46,7 +46,8 @@ export function ResultView({ task, result: r }: Props) {
     <div
       onKeyDown={(e) => {
         // Esc 放弃；在分数框里按 Enter 等同主按钮（按钮自己的 Enter 仍是点它本身）
-        if (e.key === 'Escape') { e.preventDefault(); discard(); return; }
+        // 提交进行中忽略 Esc：否则看起来放弃了，实际分数仍可能被写入提交
+        if (e.key === 'Escape') { e.preventDefault(); if (!busy.value) discard(); return; }
         if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
           e.preventDefault();
           void primary();
