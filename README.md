@@ -239,10 +239,10 @@ pnpm test:e2e                  # 先构建，再用真实 Chromium 跑：注册 
 `.github/workflows/release.yml` 会在 GitHub Release 发布后：
 
 - 检查 release tag 对应代码的测试和构建；
-- 构建并推送 `ghcr.io/stkevintan/easy-grader-server:<tag>` 的 `linux/amd64` Docker 镜像；正式 release 另外更新 `latest`，预发布 release 不更新 `latest`；
+- 构建 `linux/amd64` Docker 镜像，同时推到 `stkevintan/easy-grader-server:<tag>`（Docker Hub）和 `ghcr.io/stkevintan/easy-grader-server:<tag>`；正式 release 另外更新两边的 `latest`，预发布 release 不更新 `latest`；
 - 构建生产版扩展，并将相同内容分别打包为 Chrome / Edge zip，上传到该 GitHub Release。
 
-镜像推到 GitHub Container Registry，用 workflow 自带的 `GITHUB_TOKEN` 登录，不需要额外的 secret。镜像带 `org.opencontainers.image.source` 标签，package 会自动关联到本仓库。
+GHCR 用 workflow 自带的 `GITHUB_TOKEN` 登录。Docker Hub 用仓库的 Actions secret `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`（Docker Hub 的 Read & Write access token）登录，token 不进代码，缺了这两个 secret 镜像 job 会失败。镜像带 `org.opencontainers.image.source` 标签，package 会自动关联到本仓库。
 
 GHCR 上第一次创建的 package 默认是**私有**的。首次发布后，到 GitHub 的 package 页面（Package settings → Change visibility）把它设为 Public，再用 `docker logout ghcr.io && docker pull ghcr.io/stkevintan/easy-grader-server:latest` 确认匿名能拉取。如果 package 是先用 `publish.sh` 在本机创建的，还要在 Package settings → Manage Actions access 里给本仓库写权限，release workflow 才能推送。
 
@@ -250,7 +250,7 @@ GHCR 上第一次创建的 package 默认是**私有**的。首次发布后，�
 
 ## Docker 部署
 
-服务端镜像发布在 GitHub Container Registry 的 [`ghcr.io/stkevintan/easy-grader-server`](https://github.com/stkevintan/easy-grader/pkgs/container/easy-grader-server)，只有 linux/amd64 版本。镜像里有编译好的服务端、生产依赖和管理后台，不带演示页（`SERVE_DEMO=false`）。数据库和自动生成的 JWT 密钥存在容器的 `/data` 目录里。
+服务端镜像同时发布在 Docker Hub 的 [`stkevintan/easy-grader-server`](https://hub.docker.com/r/stkevintan/easy-grader-server) 和 GitHub Container Registry 的 [`ghcr.io/stkevintan/easy-grader-server`](https://github.com/stkevintan/easy-grader/pkgs/container/easy-grader-server)，只有 linux/amd64 版本。国内服务器拉 Docker Hub 可以走镜像加速（GHCR 没有），`server/docker-compose.yml` 默认用 Docker Hub 地址。镜像里有编译好的服务端、生产依赖和管理后台，不带演示页（`SERVE_DEMO=false`）。数据库和自动生成的 JWT 密钥存在容器的 `/data` 目录里。
 
 镜像是公开的，任何人都能拉下来看到服务端代码和评分提示词。镜像里不含任何密钥，API Key、管理员密码这些都在运行时通过 `.env` 传进去，**千万别把 `.env` 打进镜像，也别写进 Dockerfile**。`.dockerignore` 已经排除了 `server/.env`、本地数据库和 `.jwt-secret`。
 
