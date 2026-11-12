@@ -4,10 +4,20 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "strict": true,
-    "lib": ["ES2022", "DOM"],
+    "lib": [
+      "ES2022",
+      "DOM"
+    ],
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["chrome"]
+    "types": [
+      "chrome"
+    ],
+    "jsx": "react-jsx",
+    "jsxImportSource": "preact"
   },
-  "include": ["src/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx"
+  ]
 }

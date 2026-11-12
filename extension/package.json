@@ -14,5 +14,9 @@
     "esbuild": "0.28.2",
     "jsdom": "26.1.0",
     "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "@preact/signals": "2.0.3",
+    "preact": "10.26.1"
   }
 }
