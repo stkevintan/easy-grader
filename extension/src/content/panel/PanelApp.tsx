@@ -12,6 +12,7 @@ import { TaskFormView } from './views/TaskFormView';
 import { ReadyView } from './views/ReadyView';
 import { ResultView } from './views/ResultView';
 import { JudgingView, WaitingView } from './views/InProgressViews';
+import { ModeBar } from './views/ModeBar';
 
 export function PanelApp() {
   // Subscribe to signals so Preact re-renders on any change
@@ -34,6 +35,7 @@ export function PanelApp() {
   return (
     <>
       {n && <div class={`msg ${n.kind}`} role={n.kind === 'error' ? 'alert' : 'status'}>{n.text}</div>}
+      {(s.view === 'ready' || s.view === 'judging' || s.view === 'result' || s.view === 'waiting') && <ModeBar />}
       {renderView(s)}
     </>
   );

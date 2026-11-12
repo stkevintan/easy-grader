@@ -2,8 +2,8 @@
 import { h } from 'preact';
 import { useSignal } from '@preact/signals';
 import type { GradingInfo, TaskInfo } from '../../../shared/protocol';
-import { commitScore, judgeOnce, stopAuto, isAuto } from '../controller';
-import { notice, state } from '../store';
+import { commitScore, confirmAndContinue, judgeOnce } from '../controller';
+import { autoPaused, committing, mode, notice, state } from '../store';
 
 const fmt = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 
@@ -14,19 +14,51 @@ interface Props {
 
 export function ResultView({ task, result: r }: Props) {
   const score = useSignal(String(r.score));
+  const localBusy = useSignal(false);
+  // 全自动循环自己发起的提交也算忙：按钮和 Enter 都不能再提交一次
+  const busy = { get value() { return localBusy.value || committing.value; } };
   const confClass = r.confidence >= 0.8 ? 'high' : r.confidence >= 0.6 ? 'mid' : 'low';
+  // 全自动因置信度低等原因暂停在这一份：主按钮换成「确认并继续自动」
+  const paused = mode.value === 'auto' && autoPaused.value;
+  // 识别文字默认显示，过长时只露前几行，可展开
+  const ocrOpen = useSignal(false);
+  const ocrLong = !!r.ocr && (r.ocr.length > 120 || r.ocr.split('\n').length > 4);
 
-  const commit = async (andNext: boolean) => {
+  const parsed = (): number | null => {
     const v = Number(score.value);
-    if (!Number.isFinite(v) || v < 0 || v > r.maxScore) {
+    if (score.value.trim() === '' || !Number.isFinite(v) || v < 0 || v > r.maxScore) {
       notice.value = { kind: 'error', text: `分数需在 0-${fmt(r.maxScore)} 之间` };
-      return;
+      return null;
     }
-    await commitScore(v, andNext, false);
+    return v;
+  };
+
+  const run = async (fn: (v: number) => Promise<unknown>) => {
+    if (busy.value) return;
+    const v = parsed();
+    if (v === null) return;
+    localBusy.value = true;
+    try { await fn(v); } finally { localBusy.value = false; }
+  };
+
+  const primary = () => run((v) => paused ? confirmAndContinue(v) : commitScore(v, true, false));
+  const discard = () => {
+    notice.value = null;
+    state.value = { view: 'ready', task };
   };
 
   return (
-    <div>
+    <div
+      onKeyDown={(e) => {
+        // Esc 放弃；在分数框里按 Enter 等同主按钮（按钮自己的 Enter 仍是点它本身）
+        // 提交进行中忽略 Esc：否则看起来放弃了，实际分数仍可能被写入提交
+        if (e.key === 'Escape') { e.preventDefault(); if (!busy.value) discard(); return; }
+        if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+          e.preventDefault();
+          void primary();
+        }
+      }}
+    >
       <div class="score">
         <input
           type="number" min={0} max={r.maxScore} step={task.scoreStep}
@@ -53,20 +85,27 @@ export function ResultView({ task, result: r }: Props) {
       ) : null}
       {r.comment && <p>{r.comment}</p>}
       {r.ocr && (
-        <details>
-          <summary>识别出的答卷文字</summary>
-          <pre class="ocr">{r.ocr}</pre>
-        </details>
+        <div class="ocr-box">
+          <div class="ocr-head">
+            <span>识别出的答卷文字</span>
+            {ocrLong && (
+              <button type="button" class="link" onClick={() => { ocrOpen.value = !ocrOpen.value; }}>
+                {ocrOpen.value ? '收起' : '展开全文'}
+              </button>
+            )}
+          </div>
+          <pre class={`ocr${ocrLong && !ocrOpen.value ? ' clamp' : ''}`}>{r.ocr}</pre>
+        </div>
       )}
       <div class="foot">
-        <button class="btn primary grow" onClick={() => commit(true)}>写入并提交</button>
-        <button class="btn" onClick={() => commit(false)}>只写入</button>
-        <button class="btn" onClick={() => void judgeOnce(true)}>重评</button>
-        <button class="btn" onClick={() => {
-          notice.value = null;
-          state.value = { view: 'ready', task };
-        }}>放弃</button>
+        <button class="btn primary grow" disabled={busy.value} onClick={() => void primary()}>
+          {paused ? '确认并继续自动' : '写入并提交'}
+        </button>
+        <button class="btn" disabled={busy.value} onClick={() => void run((v) => commitScore(v, false, false))}>只写入</button>
+        <button class="btn" disabled={busy.value} onClick={() => void judgeOnce(true)}>重评</button>
+        <button class="btn" disabled={busy.value} onClick={discard}>放弃</button>
       </div>
+      <p class="muted keys">Enter {paused ? '确认并继续' : '写入并提交'} · Esc 放弃</p>
     </div>
   );
 }

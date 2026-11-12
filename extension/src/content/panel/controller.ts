@@ -10,10 +10,11 @@ import { signal } from '@preact/signals';
 import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from '../adapter';
 import { captureAnswer } from '../capture';
 import {
-  autoAttempted, clearNotice, judgeCandidate, lastFingerprint, lastImage, notice,
+  autoAttempted, autoConfirmPending, autoPaused, clearNotice, committing, judgeCandidate, lastFingerprint, lastImage, mode, notice,
   preset, sessionCount, setNotice, settings, state, subjects, user,
 } from './store';
 import { TaskForm } from './forms/task-form';
+import type { Mode } from './store';
 import { emptyConfig } from '../wizard';
 
 // ---------- 初始化 ----------
@@ -158,7 +159,17 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
   }
 }
 
-export async function commitScore(score: number, andNext: boolean, autoSubmitted: boolean): Promise<boolean> {
+/**
+ * cancel：全自动循环传入自己的 AbortSignal。老师切走模式/停止后，
+ * 在每一步写分、确认、提交之前检查它，不再继续对平台产生副作用。
+ */
+export async function commitScore(score: number, andNext: boolean, autoSubmitted: boolean, cancel?: AbortSignal): Promise<boolean> {
+  if (committing.value) return false; // 同一时间只允许一次写分/提交，防止重复提交
+  committing.value = true;
+  try { return await commitScoreInner(score, andNext, autoSubmitted, cancel); } finally { committing.value = false; }
+}
+
+async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: boolean, cancel?: AbortSignal): Promise<boolean> {
   const cur = state.value;
   if (cur.view !== 'result') return false;
   const { task, result: r } = cur;
@@ -170,21 +181,26 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
       console.warn('[EasyGrader] 答卷指纹处于过渡状态，跳过写分前校验', lastFingerprint.value);
     } else {
       const now = await confirmUnchanged(cfg, lastFingerprint.value);
+      if (cancel?.aborted) return false;
       if (now !== null) {
         let image: string;
         try { image = await captureAnswer(cfg.pics); } catch {
+          if (cancel?.aborted) return false;
           throw new AdapterError('页面上的答卷已经变了，本次评分作废，请重新获取建议分');
         }
         if (image === lastImage.value) {
           console.warn('[EasyGrader] 指纹变化但图片一致，按原评分写入', { expected: lastFingerprint.value, now });
         } else {
           console.warn('[EasyGrader] 答卷已变化，自动重新评分', { expected: lastFingerprint.value, now });
+          // 已被停止：不要再发起一次扣费的重新评分
+          if (cancel?.aborted) return false;
           const again = await judgeOnce(false, image);
           if (again) setNotice('warn', '页面上的答卷已变化，已自动重新评分，请核对分数后再写入');
           return false;
         }
       }
     }
+    if (cancel?.aborted) return false;
     setScore(cfg, score, r.maxScore);
     await new Promise<void>((res) => setTimeout(res, 120));
     if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
@@ -203,6 +219,7 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
       setNotice('warn', `上一份的服务端记录确认失败：${errText(e)}`);
     }
 
+    if (cancel?.aborted) return false;
     if (!andNext) {
       setNotice('ok', `已写入 ${fmt(score)} 分，请在平台上检查后手动提交`);
       state.value = { view: 'ready', task };
@@ -216,13 +233,16 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
     if (rejected) {
       console.warn(`[EasyGrader] 平台拒绝提交：${rejected}，改用键盘输入重写`);
       setNotice('warn', `平台提示「${rejected}」，正在重写分数…`);
+      if (cancel?.aborted) return false;
       await typeScore(cfg, score);
       await new Promise<void>((res) => setTimeout(res, 150));
       if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
+      if (cancel?.aborted) return false;
       await submit(cfg);
     }
     sessionCount.value += 1;
-    const changed = await waitForNext(cfg, before, abortController?.signal);
+    const changed = await waitForNext(cfg, before, cancel ?? abortController?.signal);
+    if (cancel?.aborted) return false;
     if (!changed) {
       stopAuto();
       const stillRejected = rejectText();
@@ -239,6 +259,7 @@ export async function commitScore(score: number, andNext: boolean, autoSubmitted
     state.value = { view: 'ready', task };
     return true;
   } catch (e) {
+    if (cancel?.aborted) return false; // 已被停止：不再改视图，免得覆盖新的结果
     stopAuto();
     setNotice('error', errText(e));
     state.value = { view: 'result', task, result: r };
@@ -264,7 +285,96 @@ export function stopAuto(msg?: string) {
   }
 }
 
-export async function runAuto(settings_: { autoMinConfidence: number; autoIntervalMs: number }) {
+/** 本页面已经确认过一次全自动风险提示，之后再开启不再询问 */
+let autoConfirmed = false;
+
+/**
+ * 切换阅卷模式。任何视图都能调用：
+ *   - 离开全自动会停止循环
+ *   - 进入全自动第一次需要在面板里确认，确认后才真正切换
+ */
+export function setMode(next: Mode) {
+  autoConfirmPending.value = false;
+  if (next === mode.value) return;
+  if (next !== 'auto') {
+    const wasAuto = mode.value === 'auto';
+    autoPaused.value = false;
+    mode.value = next;
+    if (wasAuto) stopAuto(isAuto.value ? '已停止自动阅卷' : undefined);
+    judgeCandidate.value = null;
+    autoAttempted.value = '';
+    if (next === 'semi') setNotice('info', '已切到半自动：换到新答卷会自动获取建议分，不会写入或提交');
+    else if (!wasAuto) setNotice('info', '已切到手动');
+    return;
+  }
+  if (!autoConfirmed) { autoConfirmPending.value = true; return; }
+  startAuto();
+}
+
+/** 面板内确认开启全自动 */
+export function confirmAuto() {
+  autoConfirmed = true;
+  autoConfirmPending.value = false;
+  startAuto();
+}
+
+export function cancelAutoConfirm() {
+  autoConfirmPending.value = false;
+}
+
+/** 进入全自动：在就绪页直接开始循环；在结果页先让老师处理这一份 */
+function startAuto() {
+  mode.value = 'auto';
+  const view = state.value.view;
+  if (view !== 'ready') {
+    // 评分中/结果页/等待换卷：先把这一份处理完，再由老师点继续
+    autoPaused.value = true;
+    setNotice('info', '已切到全自动：处理完这一份后点「确认并继续自动」或「继续自动阅卷」');
+    return;
+  }
+  autoPaused.value = false;
+  void runAuto();
+}
+
+/** 低置信度暂停后：老师确认这一份的分数，提交后继续循环 */
+export async function confirmAndContinue(score: number) {
+  // 这次提交有自己的 AbortController：停止/切模式时 stopAuto() 会取消它，
+  // 取消后不改视图、不重启循环
+  const ctrl = new AbortController();
+  abortController = ctrl;
+  const ok = await commitScore(score, true, false, ctrl.signal);
+  if (abortController === ctrl) abortController = null;
+  // 老师停止/切模式/关面板都会把 mode 改掉：这时什么都不做，不覆盖新的选择。
+  // ctrl 也可能被 commitScore 内部失败时的 stopAuto() 中止，那属于失败，要走下面的清理。
+  if (mode.value !== 'auto') return;
+  if (!ok) {
+    // 提交失败（错误提示已由 commitScore 给出）：和循环里的失败一样回到手动
+    autoPaused.value = false;
+    mode.value = 'manual';
+    return;
+  }
+  autoPaused.value = false;
+  void runAuto();
+}
+
+/** 全自动已暂停/中断时，从就绪页继续 */
+export function resumeAuto() {
+  if (mode.value !== 'auto' || isAuto.value || committing.value) return;
+  autoPaused.value = false;
+  void runAuto();
+}
+
+export async function runAuto() {
+  if (isAuto.value) return; // 已经有一个循环在跑，不再启动第二个
+  if (committing.value) {
+    // 上一次（已取消的）提交还没结束：不要再发起评分，否则新结果的提交会被锁拒绝
+    setNotice('warn', '上一份还在收尾，请稍后再开始自动阅卷');
+    return;
+  }
+  const s = settings.value;
+  if (!s) return;
+  const cur = state.value;
+  if (cur.view !== 'ready') return;
   isAuto.value = true;
   const ctrl = new AbortController();
   abortController = ctrl;
@@ -272,36 +382,30 @@ export async function runAuto(settings_: { autoMinConfidence: number; autoInterv
   while (isAuto.value && !signal.aborted) {
     const started = Date.now();
     const r = await judgeOnce();
-    if (!r || !isAuto.value) break;
-    if (r.confidence < settings_.autoMinConfidence) {
+    if (!r || !isAuto.value || signal.aborted) break;
+    if (r.confidence < s.autoMinConfidence) {
       isAuto.value = false;
-      setNotice('warn', `置信度 ${Math.round(r.confidence * 100)}% 较低，已暂停自动阅卷，请人工确认这一份`);
+      autoPaused.value = true;
+      setNotice('warn', `置信度 ${Math.round(r.confidence * 100)}% 较低，已暂停。核对分数后点「确认并继续自动」，或切回手动`);
       break;
     }
-    const ok = await commitScore(r.score, true, true);
-    if (!ok || !isAuto.value) break;
-    const wait = settings_.autoIntervalMs - (Date.now() - started);
+    const ok = await commitScore(r.score, true, true, signal);
+    if (!ok || !isAuto.value || signal.aborted) break;
+    const wait = s.autoIntervalMs - (Date.now() - started);
     if (wait > 0) await new Promise<void>((res) => setTimeout(res, wait));
   }
-  isAuto.value = false;
-  // Only clear the shared controller if it's still ours
-  if (abortController === ctrl) abortController = null;
-}
-
-export async function toggleAutoJudge() {
-  if (!settings.value) return;
-  try {
-    const next = !settings.value.autoJudge;
-    settings.value = await bg<import('../../shared/protocol').Settings>({ cmd: 'settings.set', settings: { autoJudge: next } });
-    judgeCandidate.value = null;
-    autoAttempted.value = '';
-    setNotice('info', next ? '半自动判题已开启：换到新答卷会自动评分，不会写入或提交' : '半自动判题已关闭');
-  } catch (e) { setNotice('error', errText(e)); }
+  // 只有当前这个循环还是"在跑的那个"时才收尾，避免停止后又开的新循环被误关
+  if (abortController === ctrl || abortController === null) {
+    isAuto.value = false;
+    if (abortController === ctrl) abortController = null;
+    // 出错、额度不足、阅完等原因中断：回到手动；低置信度暂停则保持全自动等老师确认
+    if (mode.value === 'auto' && !autoPaused.value) mode.value = 'manual';
+  }
 }
 
 /** 轮询检测新答卷（每秒调一次） */
 export function maybeAutoJudge() {
-  if (!settings.value?.autoJudge) return;
+  if (mode.value !== 'semi') return;
   const cur = state.value;
   if (cur.view !== 'ready' || isAuto.value) return;
   const cfg = preset.value?.config;
