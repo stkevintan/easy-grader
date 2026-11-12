@@ -192,6 +192,29 @@ async function main() {
     assert.equal(codes.length, 3);
     console.log('  管理后台通过，生成兑换码：', codes[0]);
 
+    step('管理后台：功能开关新增、修改、删除覆盖，留下修改记录');
+    await admin.keyboard.press('Escape');
+    await admin.click('a[data-route=flags]');
+    const conf = admin.locator('.card', { has: admin.locator('b', { hasText: /^auto_min_confidence$/ }) });
+    await conf.locator('button', { hasText: '新增覆盖' }).click();
+    await admin.selectOption('#f-scope', 'global');
+    await admin.fill('#f-value', '0.8');
+    await admin.click('#dialog-form button[type=submit]');
+    await conf.locator('tbody tr').first().waitFor();
+    assert.match(await conf.locator('tbody').textContent(), /全局.*0\.8/);
+    await conf.locator('button', { hasText: '修改' }).click();
+    await admin.fill('#f-value', '0.9');
+    await admin.click('#dialog-form button[type=submit]');
+    await admin.waitForFunction(() => /0\.9/.test(document.querySelector('main').textContent));
+    const flags = await (await fetch(`${BASE}/api/admin/flags`, { headers: { authorization: `Bearer ${await admin.evaluate(() => sessionStorage.getItem('eg-admin-token'))}` } })).json();
+    assert.deepEqual(flags.flags.find((f) => f.key === 'auto_min_confidence').overrides.map((o) => [o.scope, o.value]), [['global', 0.9]]);
+    await conf.locator('button', { hasText: '删除' }).click();
+    await admin.click('#dialog-form button[type=submit]');
+    await conf.locator('text=没有覆盖，所有人使用默认值').waitFor();
+    const auditText = await admin.locator('main').textContent();
+    assert.match(auditText, /0\.8.*0\.9/s);
+    console.log('  功能开关页通过');
+
     step('popup：兑换刚生成的码');
     const popup2 = await ctx.newPage();
     await popup2.goto(`chrome-extension://${extId}/popup.html`);

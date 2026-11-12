@@ -298,3 +298,24 @@ test('功能开关：扩展版本低于最低要求时显示更新提示，不�
   await flush();
   assert.doesNotMatch(app.textContent, /扩展版本过旧/);
 });
+
+test('功能开关：开启全自动等开关刷新期间切回手动，刷新回来后不会再开启', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { p, flush, click } = await setup({
+    handlers: { 'flags.get': async () => { await gate; return { ok: true, data: { flags: ON_FLAGS, stale: false, version: '0.1.1' } }; } },
+  });
+  p.store.state.value = { view: 'result', task, result };
+  await flush();
+  click('全自动');
+  await flush();
+  click('确认开启');
+  await flush();
+  assert.equal(p.store.mode.value, 'manual', '刷新还没回来，尚未切换');
+  click('半自动');
+  await flush();
+  release();
+  await flush();
+  assert.equal(p.store.mode.value, 'semi');
+  assert.equal(p.store.autoPaused.value, false);
+});

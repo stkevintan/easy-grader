@@ -752,6 +752,7 @@ async function flagDialog(flag, o, profiles, refresh) {
   }
   openDialog({
     title: o ? `修改 ${flag.key}：${SCOPE_LABEL[o.scope]}${o.targetName ? ` ${o.targetName}` : ''}` : `新增覆盖：${flag.key}`,
+    fields,
     submitText: '保存',
     onSubmit: async (v) => {
       const scope = o ? o.scope : v.scope;

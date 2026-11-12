@@ -236,24 +236,21 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
       await bg({ cmd: 'record.confirm', gradingId: r.gradingId, modifiedScore: score, isAuto: autoSubmitted });
     } catch (e) {
       console.warn('[EasyGrader] record.confirm failed:', e);
-      // 服务端明确拒绝全自动提交（管理员暂停了全自动、置信度低于下限、版本过旧）：
-      // 分数已写进输入框但还没提交，停在结果页交给老师，不能再点提交
-      if (autoSubmitted && e instanceof BgError && (e.status === 403 || e.status === 426)) {
+      // 全自动：服务端没确认（被开关拒绝、版本过旧、登录失效、超时、服务端错误），一律不提交。
+      // 分数已写进输入框但还没提交，停在结果页交给老师
+      if (autoSubmitted) {
+        if (cancel?.aborted) return false;
         stopAuto();
         autoPaused.value = false;
         mode.value = 'manual';
-        void refreshFlags(true);
-        setNotice('error', `${errText(e)}。分数已填入但未提交，请核对后手动提交`);
+        if (e instanceof BgError && (e.status === 403 || e.status === 426)) void refreshFlags(true);
+        setNotice('error', `服务端没有确认这次全自动提交：${errText(e)}。分数已填入但未提交，请核对后手动提交`);
         state.value = { view: 'result', task, result: r };
         return false;
       }
-      if (!autoSubmitted) {
-        setNotice('warn', `分数已写入平台，但服务端记录确认失败：${errText(e)}。评分历史可能不一致，请联系管理员。`);
-        state.value = { view: 'ready', task };
-        return false;
-      }
-      // Auto mode: log and continue
-      setNotice('warn', `上一份的服务端记录确认失败：${errText(e)}`);
+      setNotice('warn', `分数已写入平台，但服务端记录确认失败：${errText(e)}。评分历史可能不一致，请联系管理员。`);
+      state.value = { view: 'ready', task };
+      return false;
     }
 
     if (cancel?.aborted) return false;
@@ -313,6 +310,7 @@ export function outdatedText(): string {
 export const isAuto = signal(false);
 
 export function stopAuto(msg?: string) {
+  autoStartGen++;
   const was = isAuto.value;
   isAuto.value = false;
   abortController?.abort();
@@ -328,6 +326,8 @@ export function stopAuto(msg?: string) {
 
 /** 本页面已经确认过一次全自动风险提示，之后再开启不再询问 */
 let autoConfirmed = false;
+/** 开启全自动要先等一次开关刷新；期间切模式/停止/关面板会让这个计数变化，刷新回来后就不再开启 */
+let autoStartGen = 0;
 
 /**
  * 切换阅卷模式。任何视图都能调用：
@@ -335,6 +335,7 @@ let autoConfirmed = false;
  *   - 进入全自动第一次需要在面板里确认，确认后才真正切换
  */
 export function setMode(next: Mode) {
+  autoStartGen++;
   autoConfirmPending.value = false;
   if (next === mode.value) return;
   if (next !== 'auto') {
@@ -362,7 +363,9 @@ export function confirmAuto() {
 
 /** 开启前强制刷新一次开关：管理员刚关掉的话不要再开 */
 async function startAutoChecked() {
+  const gen = ++autoStartGen;
   await refreshFlags(true);
+  if (gen !== autoStartGen) return; // 等待期间老师换了模式、停止了或关了面板
   if (!flags.value.auto_mode) { setNotice('warn', '全自动阅卷已被管理员暂停'); return; }
   startAuto();
 }

@@ -44,9 +44,10 @@ class ApiError extends Error {
   }
 }
 
-async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 15000): Promise<T> {
+/** asToken：用指定的 token 发请求（不传则读当前存储的）；401 时只有存储的仍是这个 token 才清掉登录态 */
+async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 15000, asToken?: string): Promise<T> {
   const { serverUrl } = await settings();
-  const { token } = await store.get();
+  const token = asToken ?? (await store.get()).token;
   let res: Response;
   try {
     res = await fetch(serverUrl.replace(/\/+$/, '') + path, {
@@ -66,7 +67,7 @@ async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401) await store.remove(['token', 'user', 'flags']);
+    if (res.status === 401 && (await store.get()).token === token) await store.remove(['token', 'user', 'flags']);
     const msg = Array.isArray(data?.message) ? data.message.join('；') : data?.message;
     throw new ApiError(msg || `服务端错误（HTTP ${res.status}）`, res.status);
   }
@@ -83,13 +84,20 @@ async function getFlags(refresh: boolean): Promise<FlagsResult> {
   // 换了账号的缓存不能用：不同用户的开关可能不同
   const mine = cached && user && cached.userId === user.id ? cached : undefined;
   if (mine && !refresh && Date.now() - mine.at < FLAGS_TTL_MS) return { flags: mine.value, stale: false, version: EXT_VERSION };
+  // 整个请求绑定在开始时的这次登录上：期间登出或换了账号，结果作废，不写缓存
+  const sameSession = async () => (await store.get()).token === token;
   try {
-    const r = await api<{ flags: Partial<ClientFlags> }>('GET', '/api/flags');
+    const r = await api<{ flags: Partial<ClientFlags> }>('GET', '/api/flags', undefined, 15000, token);
+    if (!(await sameSession())) return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
     // 旧服务端没有某个字段时用保守值补齐
     const value: ClientFlags = { ...SAFE_FLAGS, ...r.flags };
     if (user) await store.set({ flags: { value, at: Date.now(), userId: user.id } });
     return { flags: value, stale: false, version: EXT_VERSION };
-  } catch {
+  } catch (e) {
+    // 登录已失效（401）或会话已变：不能再用旧缓存，按保守取值
+    if ((e instanceof ApiError && e.status === 401) || !(await sameSession())) {
+      return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
+    }
     return { flags: mine?.value ?? SAFE_FLAGS, stale: true, version: EXT_VERSION };
   }
 }
