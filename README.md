@@ -242,7 +242,9 @@ pnpm test:e2e                  # 先构建，再用真实 Chromium 跑：注册 
 - 构建并推送 `ghcr.io/stkevintan/easy-grader-server:<tag>` 的 `linux/amd64` Docker 镜像；正式 release 另外更新 `latest`，预发布 release 不更新 `latest`；
 - 构建生产版扩展，并将相同内容分别打包为 Chrome / Edge zip，上传到该 GitHub Release。
 
-镜像推到 GitHub Container Registry，用 workflow 自带的 `GITHUB_TOKEN` 登录，不需要额外的 secret。
+镜像推到 GitHub Container Registry，用 workflow 自带的 `GITHUB_TOKEN` 登录，不需要额外的 secret。镜像带 `org.opencontainers.image.source` 标签，package 会自动关联到本仓库。
+
+GHCR 上第一次创建的 package 默认是**私有**的。首次发布后，到 GitHub 的 package 页面（Package settings → Change visibility）把它设为 Public，再用 `docker logout ghcr.io && docker pull ghcr.io/stkevintan/easy-grader-server:latest` 确认匿名能拉取。如果 package 是先用 `publish.sh` 在本机创建的，还要在 Package settings → Manage Actions access 里给本仓库写权限，release workflow 才能推送。
 
 创建 GitHub Release 时，tag 应与 `server/package.json` 和 `extension/manifest.json` 的版本一致，例如 `0.2.0`；如果使用 `v0.2.0`，Docker 镜像标签也会是 `v0.2.0`。
 

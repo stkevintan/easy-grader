@@ -25,14 +25,26 @@ REVISION="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 command -v docker >/dev/null || { echo "未找到 docker" >&2; exit 1; }
 docker buildx version >/dev/null 2>&1 || { echo "需要 docker buildx（Docker Desktop 自带）" >&2; exit 1; }
 
-# 推送前确认已登录 ghcr.io，避免构建完才发现推不上去。
-ghcr_logged_in() {
+# 推送前确认已登录 IMAGE 所在的 registry，避免构建完才发现推不上去。
+# 镜像名第一段带 . 或 : 才是 registry（ghcr.io/...），否则是 Docker Hub。
+REGISTRY="${IMAGE%%/*}"
+[[ "$IMAGE" == */* && ( "$REGISTRY" == *.* || "$REGISTRY" == *:* ) ]] || REGISTRY="docker.io"
+registry_logged_in() {
   local cfg="${DOCKER_CONFIG:-$HOME/.docker}/config.json"
-  [[ -f "$cfg" ]] && grep -Eq '"ghcr\.io"' "$cfg"
+  [[ -f "$cfg" ]] || return 1
+  if [[ "$REGISTRY" == "docker.io" ]]; then
+    grep -Eq '"(https://index\.docker\.io/v1/|index\.docker\.io|docker\.io|registry-1\.docker\.io)"' "$cfg"
+  else
+    grep -Fq "\"$REGISTRY\"" "$cfg"
+  fi
 }
-if [[ -z "${DRY_RUN:-}" ]] && ! ghcr_logged_in; then
-  echo "看起来还没登录 ghcr.io，请先执行：" >&2
-  echo "  gh auth token | docker login ghcr.io -u stkevintan --password-stdin" >&2
+if [[ -z "${DRY_RUN:-}" ]] && ! registry_logged_in; then
+  echo "看起来还没登录 $REGISTRY，请先执行：" >&2
+  if [[ "$REGISTRY" == "ghcr.io" ]]; then
+    echo "  gh auth token | docker login ghcr.io -u stkevintan --password-stdin" >&2
+  else
+    echo "  docker login $REGISTRY" >&2
+  fi
   echo "（如果确定已登录，可以用 SKIP_LOGIN_CHECK=1 跳过这项检查）" >&2
   [[ -n "${SKIP_LOGIN_CHECK:-}" ]] || exit 1
 fi
@@ -53,6 +65,7 @@ docker buildx build \
   -f server/Dockerfile \
   "${TAGS[@]}" \
   --label "org.opencontainers.image.title=easy-grader-server" \
+  --label "org.opencontainers.image.source=https://github.com/stkevintan/easy-grader" \
   --label "org.opencontainers.image.version=$VERSION" \
   --label "org.opencontainers.image.revision=$REVISION" \
   --label "org.opencontainers.image.created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
