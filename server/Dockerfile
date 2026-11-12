@@ -2,7 +2,7 @@
 #
 # Easy Grader 服务端镜像。构建上下文必须是仓库根目录（需要 pnpm workspace、admin/、demo/）：
 #
-#   docker build -f server/Dockerfile -t stkevintan/easy-grader-server:dev .
+#   docker build -f server/Dockerfile -t ghcr.io/stkevintan/easy-grader-server:dev .
 #
 # 发布用 server/scripts/publish.sh。
 
