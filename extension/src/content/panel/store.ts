@@ -29,6 +29,19 @@ export const settings = signal<Settings | null>(null);
 export const subjects = signal<string[]>(['语文', '数学', '英语', '历史', '地理', '道德与法治', '政治', '物理', '化学', '生物', '其他']);
 export const preset  = signal<import('../../shared/protocol').Preset | null>(null);
 
+/**
+ * 阅卷模式，只在本次打开面板期间有效（关闭面板回到手动）：
+ *   manual 手动：点「获取建议分」才评分
+ *   semi   半自动：换到新答卷自动出建议分，不写入不提交
+ *   auto   全自动：自动写分并提交（循环是否在跑看 controller.isAuto）
+ */
+export type Mode = 'manual' | 'semi' | 'auto';
+export const mode = signal<Mode>('manual');
+/** 全自动因置信度低暂停在结果页，等老师确认这一份 */
+export const autoPaused = signal(false);
+/** 正在面板内确认是否开启全自动 */
+export const autoConfirmPending = signal(false);
+
 // 半自动阅卷：监听器相关
 export const judgeCandidate = signal<{ fp: string; at: number } | null>(null);
 export const autoAttempted  = signal('');   // 已经自动触发过的指纹

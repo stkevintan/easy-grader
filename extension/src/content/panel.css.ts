@@ -72,4 +72,19 @@ pre.ocr { white-space: pre-wrap; background: #f8fafc; padding: 8px; border-radiu
 .kv dt { color: #64748b; }
 .kv dd { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stat { font-size: 12px; color: #475569; }
+.mode { margin: 0 0 8px; }
+.seg { display: flex; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; }
+.seg-btn { flex: 1; font: inherit; padding: 5px 0; border: 0; border-right: 1px solid #cbd5e1;
+  background: #fff; color: #334155; cursor: pointer; }
+.seg-btn:last-child { border-right: 0; }
+.seg-btn:hover:not(.on) { background: #f8fafc; }
+.seg-btn.on { background: #2563eb; color: #fff; font-weight: 600; }
+.seg-btn.risky.on { background: #b45309; }
+.seg-btn:focus-visible { outline: 2px solid #2563eb; outline-offset: -2px; }
+.mode-desc { margin: 4px 0 0; font-size: 12px; color: #64748b; }
+.mode-desc.semi { color: #1e40af; }
+.mode-desc.auto { color: #92400e; font-weight: 600; }
+.msg.confirm b { font-size: 13px; }
+.confirm-actions { margin-top: 8px; }
+.keys { margin: 6px 0 0; text-align: right; }
 `;

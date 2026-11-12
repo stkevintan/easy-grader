@@ -2,8 +2,8 @@
 import { h } from 'preact';
 import { useSignal } from '@preact/signals';
 import type { GradingInfo, TaskInfo } from '../../../shared/protocol';
-import { commitScore, judgeOnce, stopAuto, isAuto } from '../controller';
-import { notice, state } from '../store';
+import { commitScore, confirmAndContinue, judgeOnce } from '../controller';
+import { autoPaused, mode, notice, state } from '../store';
 
 const fmt = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 
@@ -14,19 +14,45 @@ interface Props {
 
 export function ResultView({ task, result: r }: Props) {
   const score = useSignal(String(r.score));
+  const busy = useSignal(false);
   const confClass = r.confidence >= 0.8 ? 'high' : r.confidence >= 0.6 ? 'mid' : 'low';
+  // 全自动因置信度低等原因暂停在这一份：主按钮换成「确认并继续自动」
+  const paused = mode.value === 'auto' && autoPaused.value;
 
-  const commit = async (andNext: boolean) => {
+  const parsed = (): number | null => {
     const v = Number(score.value);
-    if (!Number.isFinite(v) || v < 0 || v > r.maxScore) {
+    if (score.value.trim() === '' || !Number.isFinite(v) || v < 0 || v > r.maxScore) {
       notice.value = { kind: 'error', text: `分数需在 0-${fmt(r.maxScore)} 之间` };
-      return;
+      return null;
     }
-    await commitScore(v, andNext, false);
+    return v;
+  };
+
+  const run = async (fn: (v: number) => Promise<unknown>) => {
+    if (busy.value) return;
+    const v = parsed();
+    if (v === null) return;
+    busy.value = true;
+    try { await fn(v); } finally { busy.value = false; }
+  };
+
+  const primary = () => run((v) => paused ? confirmAndContinue(v) : commitScore(v, true, false));
+  const discard = () => {
+    notice.value = null;
+    state.value = { view: 'ready', task };
   };
 
   return (
-    <div>
+    <div
+      onKeyDown={(e) => {
+        // Esc 放弃；在分数框里按 Enter 等同主按钮（按钮自己的 Enter 仍是点它本身）
+        if (e.key === 'Escape') { e.preventDefault(); discard(); return; }
+        if (e.key === 'Enter' && (e.target as HTMLElement).tagName === 'INPUT') {
+          e.preventDefault();
+          void primary();
+        }
+      }}
+    >
       <div class="score">
         <input
           type="number" min={0} max={r.maxScore} step={task.scoreStep}
@@ -59,14 +85,14 @@ export function ResultView({ task, result: r }: Props) {
         </details>
       )}
       <div class="foot">
-        <button class="btn primary grow" onClick={() => commit(true)}>写入并提交</button>
-        <button class="btn" onClick={() => commit(false)}>只写入</button>
-        <button class="btn" onClick={() => void judgeOnce(true)}>重评</button>
-        <button class="btn" onClick={() => {
-          notice.value = null;
-          state.value = { view: 'ready', task };
-        }}>放弃</button>
+        <button class="btn primary grow" disabled={busy.value} onClick={() => void primary()}>
+          {paused ? '确认并继续自动' : '写入并提交'}
+        </button>
+        <button class="btn" disabled={busy.value} onClick={() => void run((v) => commitScore(v, false, false))}>只写入</button>
+        <button class="btn" disabled={busy.value} onClick={() => void judgeOnce(true)}>重评</button>
+        <button class="btn" disabled={busy.value} onClick={discard}>放弃</button>
       </div>
+      <p class="muted keys">Enter {paused ? '确认并继续' : '写入并提交'} · Esc 放弃</p>
     </div>
   );
 }

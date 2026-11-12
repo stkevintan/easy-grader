@@ -10,10 +10,11 @@ import { signal } from '@preact/signals';
 import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from '../adapter';
 import { captureAnswer } from '../capture';
 import {
-  autoAttempted, clearNotice, judgeCandidate, lastFingerprint, lastImage, notice,
+  autoAttempted, autoConfirmPending, autoPaused, clearNotice, judgeCandidate, lastFingerprint, lastImage, mode, notice,
   preset, sessionCount, setNotice, settings, state, subjects, user,
 } from './store';
 import { TaskForm } from './forms/task-form';
+import type { Mode } from './store';
 import { emptyConfig } from '../wizard';
 
 // ---------- 初始化 ----------
@@ -264,7 +265,78 @@ export function stopAuto(msg?: string) {
   }
 }
 
-export async function runAuto(settings_: { autoMinConfidence: number; autoIntervalMs: number }) {
+/** 本页面已经确认过一次全自动风险提示，之后再开启不再询问 */
+let autoConfirmed = false;
+
+/**
+ * 切换阅卷模式。任何视图都能调用：
+ *   - 离开全自动会停止循环
+ *   - 进入全自动第一次需要在面板里确认，确认后才真正切换
+ */
+export function setMode(next: Mode) {
+  autoConfirmPending.value = false;
+  if (next === mode.value) return;
+  if (next !== 'auto') {
+    const wasAuto = mode.value === 'auto';
+    autoPaused.value = false;
+    mode.value = next;
+    if (wasAuto) stopAuto(isAuto.value ? '已停止自动阅卷' : undefined);
+    judgeCandidate.value = null;
+    autoAttempted.value = '';
+    if (next === 'semi') setNotice('info', '已切到半自动：换到新答卷会自动获取建议分，不会写入或提交');
+    else if (!wasAuto) setNotice('info', '已切到手动');
+    return;
+  }
+  if (!autoConfirmed) { autoConfirmPending.value = true; return; }
+  startAuto();
+}
+
+/** 面板内确认开启全自动 */
+export function confirmAuto() {
+  autoConfirmed = true;
+  autoConfirmPending.value = false;
+  startAuto();
+}
+
+export function cancelAutoConfirm() {
+  autoConfirmPending.value = false;
+}
+
+/** 进入全自动：在就绪页直接开始循环；在结果页先让老师处理这一份 */
+function startAuto() {
+  mode.value = 'auto';
+  const view = state.value.view;
+  if (view !== 'ready') {
+    // 评分中/结果页/等待换卷：先把这一份处理完，再由老师点继续
+    autoPaused.value = true;
+    setNotice('info', '已切到全自动：处理完这一份后点「确认并继续自动」或「继续自动阅卷」');
+    return;
+  }
+  autoPaused.value = false;
+  void runAuto();
+}
+
+/** 低置信度暂停后：老师确认这一份的分数，提交后继续循环 */
+export async function confirmAndContinue(score: number) {
+  const ok = await commitScore(score, true, false);
+  if (!ok || mode.value !== 'auto') return;
+  autoPaused.value = false;
+  void runAuto();
+}
+
+/** 全自动已暂停/中断时，从就绪页继续 */
+export function resumeAuto() {
+  if (mode.value !== 'auto' || isAuto.value) return;
+  autoPaused.value = false;
+  void runAuto();
+}
+
+export async function runAuto() {
+  if (isAuto.value) return; // 已经有一个循环在跑，不再启动第二个
+  const s = settings.value;
+  if (!s) return;
+  const cur = state.value;
+  if (cur.view !== 'ready') return;
   isAuto.value = true;
   const ctrl = new AbortController();
   abortController = ctrl;
@@ -272,36 +344,30 @@ export async function runAuto(settings_: { autoMinConfidence: number; autoInterv
   while (isAuto.value && !signal.aborted) {
     const started = Date.now();
     const r = await judgeOnce();
-    if (!r || !isAuto.value) break;
-    if (r.confidence < settings_.autoMinConfidence) {
+    if (!r || !isAuto.value || signal.aborted) break;
+    if (r.confidence < s.autoMinConfidence) {
       isAuto.value = false;
-      setNotice('warn', `置信度 ${Math.round(r.confidence * 100)}% 较低，已暂停自动阅卷，请人工确认这一份`);
+      autoPaused.value = true;
+      setNotice('warn', `置信度 ${Math.round(r.confidence * 100)}% 较低，已暂停。核对分数后点「确认并继续自动」，或切回手动`);
       break;
     }
     const ok = await commitScore(r.score, true, true);
-    if (!ok || !isAuto.value) break;
-    const wait = settings_.autoIntervalMs - (Date.now() - started);
+    if (!ok || !isAuto.value || signal.aborted) break;
+    const wait = s.autoIntervalMs - (Date.now() - started);
     if (wait > 0) await new Promise<void>((res) => setTimeout(res, wait));
   }
-  isAuto.value = false;
-  // Only clear the shared controller if it's still ours
-  if (abortController === ctrl) abortController = null;
-}
-
-export async function toggleAutoJudge() {
-  if (!settings.value) return;
-  try {
-    const next = !settings.value.autoJudge;
-    settings.value = await bg<import('../../shared/protocol').Settings>({ cmd: 'settings.set', settings: { autoJudge: next } });
-    judgeCandidate.value = null;
-    autoAttempted.value = '';
-    setNotice('info', next ? '半自动判题已开启：换到新答卷会自动评分，不会写入或提交' : '半自动判题已关闭');
-  } catch (e) { setNotice('error', errText(e)); }
+  // 只有当前这个循环还是"在跑的那个"时才收尾，避免停止后又开的新循环被误关
+  if (abortController === ctrl || abortController === null) {
+    isAuto.value = false;
+    if (abortController === ctrl) abortController = null;
+    // 出错、额度不足、阅完等原因中断：回到手动；低置信度暂停则保持全自动等老师确认
+    if (mode.value === 'auto' && !autoPaused.value) mode.value = 'manual';
+  }
 }
 
 /** 轮询检测新答卷（每秒调一次） */
 export function maybeAutoJudge() {
-  if (!settings.value?.autoJudge) return;
+  if (mode.value !== 'semi') return;
   const cur = state.value;
   if (cur.view !== 'ready' || isAuto.value) return;
   const cfg = preset.value?.config;

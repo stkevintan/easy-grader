@@ -4,7 +4,7 @@
  * 渲染全部交给 Preact（PanelApp）；这个类只负责：
  *   1. 创建/销毁 closed shadow root
  *   2. 管理拖动和最小化
- *   3. 半自动轮询（1 秒检测换卷）
+ *   3. 半自动轮询（1 秒检测换卷，只在「半自动」模式下触发评分）
  *   4. E2E _test 钩子（保持 DOM id 不变）
  */
 import { h, render } from 'preact';
@@ -16,7 +16,7 @@ import {
   init, stopAuto, maybeAutoJudge, isAuto,
 } from './panel/controller';
 import {
-  sessionCount, settings, preset, state, user, isPicking,
+  sessionCount, preset, state, user, isPicking, mode, autoPaused, autoConfirmPending,
 } from './panel/store';
 
 export class Panel {
@@ -109,7 +109,7 @@ export class Panel {
         ? `${user.value.username} · 剩余 ${user.value.credits} 次`
         : '';
     }
-    if (this.titleEl) this.titleEl.textContent = isAuto.value ? 'Easy Grader · 自动阅卷中' : 'Easy Grader';
+    if (this.titleEl) this.titleEl.textContent = isAuto.value ? 'Easy Grader · 全自动阅卷中' : mode.value === 'semi' ? 'Easy Grader · 半自动' : mode.value === 'auto' ? 'Easy Grader · 全自动已暂停' : 'Easy Grader';
     // Reflect picking state on the .panel section so CSS .panel.picking works
     const panelEl = this.root?.querySelector('section');
     if (panelEl) panelEl.classList.toggle('picking', isPicking.value);
@@ -117,6 +117,10 @@ export class Panel {
 
   close() {
     stopAuto();
+    // 阅卷模式只在本次打开期间有效：关闭面板回到手动
+    mode.value = 'manual';
+    autoPaused.value = false;
+    autoConfirmPending.value = false;
     this.stopJudgeWatcher();
     if (this.headerTimer) { clearInterval(this.headerTimer); this.headerTimer = null; }
     cancelPick();
@@ -139,6 +143,7 @@ export class Panel {
       view: state.value.view,
       adapted: !!preset.value,
       auto: isAuto.value,
+      mode: mode.value,
       count: sessionCount.value,
     };
   }

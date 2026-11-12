@@ -12,8 +12,6 @@ export interface PublicUser {
 
 export interface Settings {
   serverUrl: string;
-  /** 半自动：换到新答卷时自动获取建议分，但不写入、不提交 */
-  autoJudge: boolean;
   /** 自动连续阅卷时，置信度低于该值就暂停让人工确认 */
   autoMinConfidence: number;
   /** 自动连续阅卷每份之间的最小间隔（毫秒），避免对阅卷平台造成高频访问 */
@@ -22,8 +20,6 @@ export interface Settings {
 
 export const DEFAULT_SETTINGS: Settings = {
   serverUrl: DEFAULT_SERVER,
-  // 半自动：换到新答卷就自动判题，但写入/提交仍由老师点按钮确认
-  autoJudge: true,
   autoMinConfidence: 0.7,
   autoIntervalMs: 2500,
 };
