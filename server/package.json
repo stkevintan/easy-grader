@@ -1,6 +1,6 @@
 {
   "name": "easy-grader-server",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Easy Grader 服务端：账号、额度、兑换码、AI 评分、适配预设、管理后台静态托管",
   "scripts": {
