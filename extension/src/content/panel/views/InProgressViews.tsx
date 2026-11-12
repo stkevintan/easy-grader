@@ -1,6 +1,7 @@
 /** 评分进行中/等待换卷视图 */
 import { h } from 'preact';
 import { isAuto, setMode, stopAuto } from '../controller';
+import { mode } from '../store';
 import type { TaskInfo } from '../../../shared/protocol';
 
 interface JudgingProps { task: TaskInfo; }
@@ -32,7 +33,10 @@ export function WaitingView({ task: _ }: WaitingProps) {
         {isAuto.value ? (
           <button class="btn danger grow" onClick={() => setMode('manual')}>停止自动阅卷</button>
         ) : (
-          <button class="btn grow" onClick={() => stopAuto('已停止等待换卷')}>不再等待</button>
+          // 「确认并继续自动」后等待换卷时 isAuto 还是 false：也要退出全自动，否则换卷后会重新开始循环
+          mode.value === 'auto'
+            ? <button class="btn danger grow" onClick={() => { setMode('manual'); stopAuto('已停止自动阅卷'); }}>停止自动阅卷</button>
+            : <button class="btn grow" onClick={() => stopAuto('已停止等待换卷')}>不再等待</button>
         )}
       </div>
     </div>

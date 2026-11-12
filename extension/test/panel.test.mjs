@@ -161,3 +161,27 @@ test('半自动轮询只在半自动模式下触发', async () => {
   p.controller.maybeAutoJudge();
   assert.equal(p.store.judgeCandidate.value, null, '手动模式下不应记录换卷候选');
 });
+
+test('有提交正在进行时，结果页按钮禁用、Enter 不会再提交一次', async () => {
+  const { w, p, flush, app } = await setup();
+  p.store.state.value = { view: 'result', task, result };
+  p.store.committing.value = true;
+  await flush();
+  const primary = Array.from(app.querySelectorAll('button')).find((b) => b.textContent.trim() === '写入并提交');
+  assert.equal(primary.disabled, true);
+  assert.equal(await p.controller.commitScore(4, true, false), false, '并发的第二次提交直接拒绝');
+  app.querySelector('input[type=number]').dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await flush();
+  assert.equal(p.store.state.value.view, 'result', '提交中 Esc 不放弃');
+});
+
+test('全自动已暂停后等待换卷：停止按钮会退出全自动', async () => {
+  const { p, flush, click } = await setup();
+  p.store.mode.value = 'auto';
+  p.store.state.value = { view: 'waiting', task, auto: false };
+  await flush();
+  click('停止自动阅卷');
+  await flush();
+  assert.equal(p.store.mode.value, 'manual');
+  assert.equal(p.store.state.value.view, 'ready');
+});

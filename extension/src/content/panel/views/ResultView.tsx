@@ -3,7 +3,7 @@ import { h } from 'preact';
 import { useSignal } from '@preact/signals';
 import type { GradingInfo, TaskInfo } from '../../../shared/protocol';
 import { commitScore, confirmAndContinue, judgeOnce } from '../controller';
-import { autoPaused, mode, notice, state } from '../store';
+import { autoPaused, committing, mode, notice, state } from '../store';
 
 const fmt = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 
@@ -14,7 +14,9 @@ interface Props {
 
 export function ResultView({ task, result: r }: Props) {
   const score = useSignal(String(r.score));
-  const busy = useSignal(false);
+  const localBusy = useSignal(false);
+  // 全自动循环自己发起的提交也算忙：按钮和 Enter 都不能再提交一次
+  const busy = { get value() { return localBusy.value || committing.value; } };
   const confClass = r.confidence >= 0.8 ? 'high' : r.confidence >= 0.6 ? 'mid' : 'low';
   // 全自动因置信度低等原因暂停在这一份：主按钮换成「确认并继续自动」
   const paused = mode.value === 'auto' && autoPaused.value;
@@ -32,8 +34,8 @@ export function ResultView({ task, result: r }: Props) {
     if (busy.value) return;
     const v = parsed();
     if (v === null) return;
-    busy.value = true;
-    try { await fn(v); } finally { busy.value = false; }
+    localBusy.value = true;
+    try { await fn(v); } finally { localBusy.value = false; }
   };
 
   const primary = () => run((v) => paused ? confirmAndContinue(v) : commitScore(v, true, false));

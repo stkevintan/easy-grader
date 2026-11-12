@@ -10,7 +10,7 @@ import { signal } from '@preact/signals';
 import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from '../adapter';
 import { captureAnswer } from '../capture';
 import {
-  autoAttempted, autoConfirmPending, autoPaused, clearNotice, judgeCandidate, lastFingerprint, lastImage, mode, notice,
+  autoAttempted, autoConfirmPending, autoPaused, clearNotice, committing, judgeCandidate, lastFingerprint, lastImage, mode, notice,
   preset, sessionCount, setNotice, settings, state, subjects, user,
 } from './store';
 import { TaskForm } from './forms/task-form';
@@ -164,6 +164,12 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
  * 在每一步写分、确认、提交之前检查它，不再继续对平台产生副作用。
  */
 export async function commitScore(score: number, andNext: boolean, autoSubmitted: boolean, cancel?: AbortSignal): Promise<boolean> {
+  if (committing.value) return false; // 同一时间只允许一次写分/提交，防止重复提交
+  committing.value = true;
+  try { return await commitScoreInner(score, andNext, autoSubmitted, cancel); } finally { committing.value = false; }
+}
+
+async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: boolean, cancel?: AbortSignal): Promise<boolean> {
   const cur = state.value;
   if (cur.view !== 'result') return false;
   const { task, result: r } = cur;

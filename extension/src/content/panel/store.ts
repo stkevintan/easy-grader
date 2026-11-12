@@ -41,6 +41,8 @@ export const mode = signal<Mode>('manual');
 export const autoPaused = signal(false);
 /** 正在面板内确认是否开启全自动 */
 export const autoConfirmPending = signal(false);
+/** 有一次写分/提交正在进行（手动或全自动），期间结果页的按钮和快捷键都不可用 */
+export const committing = signal(false);
 
 // 半自动阅卷：监听器相关
 export const judgeCandidate = signal<{ fp: string; at: number } | null>(null);
