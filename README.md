@@ -239,32 +239,29 @@ pnpm test:e2e                  # 先构建，再用真实 Chromium 跑：注册 
 `.github/workflows/release.yml` 会在 GitHub Release 发布后：
 
 - 检查 release tag 对应代码的测试和构建；
-- 构建并推送 `stkevintan/easy-grader-server:<tag>` 的 `linux/amd64` Docker 镜像；正式 release 另外更新 `latest`，预发布 release 不更新 `latest`；
+- 构建并推送 `ghcr.io/stkevintan/easy-grader-server:<tag>` 的 `linux/amd64` Docker 镜像；正式 release 另外更新 `latest`，预发布 release 不更新 `latest`；
 - 构建生产版扩展，并将相同内容分别打包为 Chrome / Edge zip，上传到该 GitHub Release。
 
-在仓库 Settings → Secrets and variables → Actions 中设置：
+镜像推到 GitHub Container Registry，用 workflow 自带的 `GITHUB_TOKEN` 登录，不需要额外的 secret。
 
-- `DOCKERHUB_USERNAME`：Docker Hub 用户名；
-- `DOCKERHUB_TOKEN`：Docker Hub Access Token（不要使用密码）。
-
-创建 GitHub Release 时，tag 应与 `server/package.json` 和 `extension/manifest.json` 的版本一致，例如 `0.1.1`；如果使用 `v0.1.1`，Docker 镜像标签也会是 `v0.1.1`。
+创建 GitHub Release 时，tag 应与 `server/package.json` 和 `extension/manifest.json` 的版本一致，例如 `0.2.0`；如果使用 `v0.2.0`，Docker 镜像标签也会是 `v0.2.0`。
 
 ## Docker 部署
 
-服务端镜像发布在 Docker Hub 的公开仓库 [`stkevintan/easy-grader-server`](https://hub.docker.com/r/stkevintan/easy-grader-server)，只有 linux/amd64 版本。镜像里有编译好的服务端、生产依赖和管理后台，不带演示页（`SERVE_DEMO=false`）。数据库和自动生成的 JWT 密钥存在容器的 `/data` 目录里。
+服务端镜像发布在 GitHub Container Registry 的 [`ghcr.io/stkevintan/easy-grader-server`](https://github.com/stkevintan/easy-grader/pkgs/container/easy-grader-server)，只有 linux/amd64 版本。镜像里有编译好的服务端、生产依赖和管理后台，不带演示页（`SERVE_DEMO=false`）。数据库和自动生成的 JWT 密钥存在容器的 `/data` 目录里。
 
 镜像是公开的，任何人都能拉下来看到服务端代码和评分提示词。镜像里不含任何密钥，API Key、管理员密码这些都在运行时通过 `.env` 传进去，**千万别把 `.env` 打进镜像，也别写进 Dockerfile**。`.dockerignore` 已经排除了 `server/.env`、本地数据库和 `.jwt-secret`。
 
 **发布**（在开发机上，需要 Docker Desktop 或 docker buildx）：
 
 ```bash
-docker login                          # 首次；建议用 Docker Hub 的 Access Token
+gh auth token | docker login ghcr.io -u stkevintan --password-stdin   # 首次；gh 需要 read:packages / write:packages 权限
 ./server/scripts/publish.sh           # 推送 <package.json 版本> 和 latest
 ./server/scripts/publish.sh 0.2.0     # 指定版本；带 -rc 等后缀的不会覆盖 latest
 DRY_RUN=1 ./server/scripts/publish.sh # 只构建到本地，不推送
 ```
 
-**部署**（在服务器上，拉镜像不用登录）：
+**部署**（在服务器上，拉公开镜像不用登录）：
 
 ```bash
 cd server && cp .env.example .env     # 设置 ADMIN_PASSWORD、JWT_SECRET、MODEL_*、ALLOW_REGISTER
