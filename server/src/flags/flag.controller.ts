@@ -10,6 +10,8 @@ const SCOPES: FlagScope[] = ['global', 'rollout', 'unit', 'user'];
 class SetOverrideDto {
   @IsIn(SCOPES) scope!: FlagScope;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) targetId?: number;
+  /** scope=user 时可以用用户名代替 targetId（精确匹配） */
+  @IsOptional() @IsString() @MaxLength(32) username?: string;
   /** 类型由开关定义校验（布尔 / 数字 / 字符串） */
   @IsDefined() value!: unknown;
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100) percent?: number;

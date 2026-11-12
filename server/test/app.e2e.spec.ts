@@ -682,7 +682,8 @@ describe('功能开关', () => {
 
     await put({ scope: 'global', value: 0.75 });
     await put({ scope: 'unit', targetId: a.unitId, value: 0.8 });
-    await put({ scope: 'user', targetId: a.id, value: 0.9 });
+    await put({ scope: 'user', username: 'no_such_user', value: 0.9 }, 400);
+    await put({ scope: 'user', username: 'flag_a', value: 0.9 });
     const val = async (u: { h: { authorization: string } }) => (await http.get('/api/flags').set(u.h)).body.flags.auto_min_confidence;
     expect(await val(a)).toBe(0.9);
     expect(await val(b)).toBe(0.8);
@@ -939,6 +940,10 @@ describe('纯函数', () => {
     expect(() => parseModelProfiles('{"default": {}}')).toThrow('方案名');
     expect(() => parseModelProfiles('{"a": {"maxRetries": 3}}')).toThrow('不支持字段');
     expect(() => parseModelProfiles('{"a": {"temperature": "0.1"}}')).toThrow('应为 number');
+    expect(() => parseModelProfiles('{"a": {"apiKey": ""}}')).toThrow('不能为空');
+    expect(() => parseModelProfiles('{"a": {"timeoutMs": -1}}')).toThrow('timeoutMs');
+    expect(() => parseModelProfiles('{"a": {"timeoutMs": 0.5}}')).toThrow('timeoutMs');
+    expect(() => parseModelProfiles('{"a": {"sampleCount": 2.5}}')).toThrow('正整数');
   });
 
   it('版本比较与放量分桶', () => {

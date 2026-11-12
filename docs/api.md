@@ -481,7 +481,7 @@
 | 方法/路径 | 说明 |
 | --- | --- |
 | `GET /api/admin/flags` | 全部开关定义（类型、默认值、说明、负责人、计划删除时间）和覆盖列表，以及可选的模型方案 `modelProfiles` |
-| `PUT /api/admin/flags/:key` | 新增或修改一条覆盖：`{ scope, targetId?, value, percent? }` |
+| `PUT /api/admin/flags/:key` | 新增或修改一条覆盖：`{ scope, targetId?, username?, value, percent? }`；`scope=user` 时可以用精确用户名代替 `targetId` |
 | `DELETE /api/admin/flags/:key?scope=&targetId=` | 删除一条覆盖 |
 | `GET /api/admin/flags/evaluate/:userId` | 某个用户每个开关的最终取值和来源：`{ key: { value, source, targetId? } }` |
 | `GET /api/admin/flags-audit?key=&page=&pageSize=` | 修改记录，新的在前 |

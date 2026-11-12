@@ -199,9 +199,14 @@ export class FlagService {
   async setOverride(
     actor: { id: number; username: string },
     key: string,
-    input: { scope: FlagScope; targetId?: number; value: unknown; percent?: number },
+    input: { scope: FlagScope; targetId?: number; username?: string; value: unknown; percent?: number },
   ) {
     const def = this.def(key);
+    if (input.scope === 'user' && !input.targetId && input.username) {
+      const [u] = await this.overrides.manager.query('SELECT id FROM users WHERE username = ?', [input.username.trim()]);
+      if (!u) throw new HttpException(`找不到用户 ${input.username.trim()}`, 400);
+      input = { ...input, targetId: Number(u.id) };
+    }
     const targetId = this.normTarget(input.scope, input.targetId);
     const err = checkFlagValue(def, input.value, this.validateContext);
     if (err) throw new HttpException(err, 400);

@@ -297,7 +297,11 @@ export class ModelService {
     profile = 'default',
   ): Promise<ModelVerdict> {
     const m = this.modelFor(profile);
-    if (!this.isUsable(m)) return this.mock(task, sha256);
+    if (!this.isUsable(m)) {
+      // mock 只给没配置模型的开发环境用；生产上选中了不完整的方案要明确失败（退还次数），不能悄悄出假分
+      if (profile !== 'default' && m !== this.cfg.model) throw new ServiceUnavailableException(`模型方案 ${profile} 缺少 baseUrl / apiKey / name，请联系管理员`);
+      return this.mock(task, sha256);
+    }
 
     const started = Date.now();
     const goldExamples = examples.map((e) => ({ recordId: e.recordId, score: e.score }));

@@ -78,12 +78,29 @@ const EXT_VERSION = chrome.runtime.getManifest().version;
 /** 开关缓存时间：面板打开和全自动每份之前都会读，这期间不重复请求 */
 const FLAGS_TTL_MS = 5 * 60 * 1000;
 
+/** 同一时间只发一个开关请求：并发的调用共用它，避免晚到的旧响应覆盖新值 */
+let flagsInflight: Promise<FlagsResult> | null = null;
+
 async function getFlags(refresh: boolean): Promise<FlagsResult> {
+  if (!refresh) {
+    const { flags: cached, user, token } = await store.get();
+    if (!token) return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
+    // 换了账号的缓存不能用：不同用户的开关可能不同
+    if (cached && user && cached.userId === user.id && Date.now() - cached.at < FLAGS_TTL_MS) {
+      return { flags: cached.value, stale: false, version: EXT_VERSION };
+    }
+  }
+  // 正在请求时共用这一个（它本身就是最新发出的请求）
+  if (flagsInflight) return flagsInflight;
+  const p = fetchFlags().finally(() => { if (flagsInflight === p) flagsInflight = null; });
+  flagsInflight = p;
+  return p;
+}
+
+async function fetchFlags(): Promise<FlagsResult> {
   const { flags: cached, user, token } = await store.get();
   if (!token) return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
-  // 换了账号的缓存不能用：不同用户的开关可能不同
   const mine = cached && user && cached.userId === user.id ? cached : undefined;
-  if (mine && !refresh && Date.now() - mine.at < FLAGS_TTL_MS) return { flags: mine.value, stale: false, version: EXT_VERSION };
   // 整个请求绑定在开始时的这次登录上：期间登出或换了账号，结果作废，不写缓存
   const sameSession = async () => (await store.get()).token === token;
   try {

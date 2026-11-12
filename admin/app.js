@@ -761,17 +761,14 @@ async function flagDialog(flag, o, profiles, refresh) {
         if (!v.unitId) throw new Error('请先创建管理单元');
         targetId = Number(v.unitId);
       }
+      let username;
       if (!o && scope === 'user') {
-        const name = v.username.trim();
-        if (!name) throw new Error('请输入用户名');
-        const r = await api('GET', `/api/admin/users?${qs({ q: name, pageSize: 100 })}`);
-        const u = r.items.find((x) => x.username === name);
-        if (!u) throw new Error(`找不到用户 ${name}`);
-        targetId = u.id;
+        username = v.username.trim();
+        if (!username) throw new Error('请输入用户名');
       }
       const value = flag.type === 'boolean' ? v.value === 'true' : flag.type === 'number' ? Number(v.value) : v.value.trim();
       if (flag.type === 'number' && (v.value === '' || !Number.isFinite(value))) throw new Error('请输入数字');
-      const body = { scope, value, ...(targetId ? { targetId } : {}), ...(scope === 'rollout' ? { percent: Number(v.percent) } : {}) };
+      const body = { scope, value, ...(targetId ? { targetId } : {}), ...(username ? { username } : {}), ...(scope === 'rollout' ? { percent: Number(v.percent) } : {}) };
       await api('PUT', `/api/admin/flags/${flag.key}`, body);
       toast('已保存，扩展最晚 5 分钟内生效');
       refresh();
