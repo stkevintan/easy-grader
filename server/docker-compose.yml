@@ -3,7 +3,7 @@
 #   docker compose up -d
 services:
   server:
-    image: ghcr.io/stkevintan/easy-grader-server:latest
+    image: stkevintan/easy-grader-server:latest
     restart: unless-stopped
     env_file: .env
     environment:

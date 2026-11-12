@@ -13,6 +13,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/stkevintan/easy-grader-server
+  DOCKERHUB_IMAGE: stkevintan/easy-grader-server
   NODE_VERSION: 22
   PNPM_VERSION: 12.16.1
 
@@ -71,11 +72,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # 国内服务器拉 GHCR 走直连很慢，同时推 Docker Hub，那边有镜像加速。
+      # 凭证是仓库的 Actions secret（DOCKERHUB_USERNAME / DOCKERHUB_TOKEN），不进代码。
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.IMAGE }}
+          images: |
+            ${{ env.IMAGE }}
+            ${{ env.DOCKERHUB_IMAGE }}
           tags: |
             type=raw,value=${{ github.event.release.tag_name }}
             type=raw,value=latest,enable=${{ github.event.release.prerelease == false }}
