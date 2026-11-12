@@ -38,13 +38,25 @@ const result = {
   model: 'x', cached: false, balance: 9,
 };
 
-async function setup() {
+const ON_FLAGS = { auto_mode: true, auto_min_confidence: 0.7, min_extension_version: '' };
+
+/** flags：服务端下发的开关（flags.get 返回它）；handlers：按 cmd 覆盖后台响应 */
+async function setup({ flags = ON_FLAGS, version = '0.1.1', handlers = {} } = {}) {
   const dom = new JSDOM('<!doctype html><body><div id="app"></div></body>', { runScripts: 'outside-only', pretendToBeVisual: true, url: 'http://localhost/demo/' });
   const w = dom.window;
-  w.__chrome = { runtime: { sendMessage: async () => ({ ok: true, data: {} }) } };
+  const sent = [];
+  const state = { flags };
+  w.__chrome = { runtime: { sendMessage: async (req) => {
+    sent.push(req);
+    if (handlers[req.cmd]) return handlers[req.cmd](req);
+    if (req.cmd === 'flags.get') return { ok: true, data: { flags: state.flags, stale: false, version } };
+    return { ok: true, data: {} };
+  } } };
   w.eval(code);
   const p = w.__p;
   p.store.settings.value = { serverUrl: '', autoMinConfidence: 0.7, autoIntervalMs: 2500 };
+  p.store.flags.value = flags;
+  p.store.extVersion.value = version;
   const app = w.document.getElementById('app');
   p.render(p.h(p.PanelApp, null), app);
   const flush = () => new Promise((r) => w.setTimeout(r, 20));
@@ -54,7 +66,7 @@ async function setup() {
     assert.ok(b, `找不到按钮「${label}」，当前：${buttons().join(' | ')}`);
     b.click();
   };
-  return { w, p, app, flush, buttons, click };
+  return { w, p, app, flush, buttons, click, sent, state };
 }
 
 test('模式切换条常驻，默认手动；开启全自动先在面板内确认', async () => {
@@ -219,4 +231,91 @@ test('识别文字默认显示；过长时截断，可展开/收起', async () =
   click('收起');
   await flush();
   assert.ok(pre().classList.contains('clamp'));
+});
+
+test('功能开关：从没拉到开关时全自动不可用；管理员关掉后按钮置灰，正在全自动的切回手动', async () => {
+  const { p, flush, app, state } = await setup();
+  // 保守取值（store 的初始值）
+  p.store.flags.value = { auto_mode: false, auto_min_confidence: 0.7, min_extension_version: '' };
+  p.store.state.value = { view: 'ready', task };
+  await flush();
+  const autoBtn = () => Array.from(app.querySelectorAll('button')).find((b) => b.textContent.trim() === '全自动');
+  assert.equal(autoBtn().disabled, true);
+  p.controller.setMode('auto');
+  await flush();
+  assert.equal(p.store.mode.value, 'manual');
+  assert.match(app.textContent, /全自动阅卷已被管理员暂停/);
+
+  // 开着全自动时管理员关掉：下一次刷新开关就切回手动
+  p.store.flags.value = ON_FLAGS;
+  p.store.mode.value = 'auto';
+  p.store.autoPaused.value = true;
+  state.flags = { ...ON_FLAGS, auto_mode: false };
+  await p.controller.refreshFlags(true);
+  await flush();
+  assert.equal(p.store.mode.value, 'manual');
+  assert.match(app.textContent, /已切回手动/);
+});
+
+test('功能开关：确认开启全自动前强制刷新一次，刚被关掉就不开', async () => {
+  const { p, flush, buttons, click, state, sent } = await setup();
+  p.store.state.value = { view: 'result', task, result };
+  await flush();
+  click('全自动');
+  await flush();
+  state.flags = { ...ON_FLAGS, auto_mode: false };
+  click('确认开启');
+  await flush();
+  assert.ok(sent.some((r) => r.cmd === 'flags.get' && r.refresh === true));
+  assert.equal(p.store.mode.value, 'manual');
+  assert.ok(buttons().includes('写入并提交'));
+});
+
+test('功能开关：置信度下限取老师设置和服务端下限中更严的', async () => {
+  const { p, flush, click, app } = await setup({ flags: { ...ON_FLAGS, auto_min_confidence: 0.85 } });
+  assert.equal(p.store.effectiveMinConfidence.value, 0.85);
+  p.store.settings.value = { ...p.store.settings.value, autoMinConfidence: 0.9 };
+  assert.equal(p.store.effectiveMinConfidence.value, 0.9);
+  p.store.settings.value = { ...p.store.settings.value, autoMinConfidence: 0.5 };
+  p.store.state.value = { view: 'ready', task };
+  await flush();
+  click('全自动');
+  await flush();
+  assert.match(app.textContent, /置信度低于 85% 时会暂停/);
+});
+
+test('功能开关：扩展版本低于最低要求时显示更新提示，不发评分请求', async () => {
+  const { p, flush, app, sent } = await setup({ flags: { ...ON_FLAGS, min_extension_version: '0.2.0' }, version: '0.1.1' });
+  p.store.user.value = { id: 1, username: 'u', role: 'user', credits: 3 };
+  p.store.preset.value = { config: {} };
+  p.store.state.value = { view: 'ready', task };
+  await flush();
+  assert.match(app.textContent, /扩展版本过旧（当前 0\.1\.1，最低要求 0\.2\.0）/);
+  const r = await p.controller.judgeOnce();
+  assert.equal(r, null);
+  assert.ok(!sent.some((x) => x.cmd === 'judge.run'));
+  p.store.flags.value = ON_FLAGS;
+  await flush();
+  assert.doesNotMatch(app.textContent, /扩展版本过旧/);
+});
+
+test('功能开关：开启全自动等开关刷新期间切回手动，刷新回来后不会再开启', async () => {
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const { p, flush, click } = await setup({
+    handlers: { 'flags.get': async () => { await gate; return { ok: true, data: { flags: ON_FLAGS, stale: false, version: '0.1.1' } }; } },
+  });
+  p.store.state.value = { view: 'result', task, result };
+  await flush();
+  click('全自动');
+  await flush();
+  click('确认开启');
+  await flush();
+  assert.equal(p.store.mode.value, 'manual', '刷新还没回来，尚未切换');
+  click('半自动');
+  await flush();
+  release();
+  await flush();
+  assert.equal(p.store.mode.value, 'semi');
+  assert.equal(p.store.autoPaused.value, false);
 });

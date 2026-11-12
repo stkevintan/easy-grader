@@ -4,13 +4,13 @@
  * 只操作 store 信号，不直接改 DOM；组件只需读信号和调这里的函数。
  */
 import type { AdapterConfig } from '../../shared/adapter-config';
-import type { GradingInfo, TaskInfo } from '../../shared/protocol';
-import { bg } from '../../shared/protocol';
+import type { FlagsResult, GradingInfo, TaskInfo } from '../../shared/protocol';
+import { BgError, bg } from '../../shared/protocol';
 import { signal } from '@preact/signals';
 import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from '../adapter';
 import { captureAnswer } from '../capture';
 import {
-  autoAttempted, autoConfirmPending, autoPaused, clearNotice, committing, judgeCandidate, lastFingerprint, lastImage, mode, notice,
+  autoAttempted, autoConfirmPending, autoPaused, clearNotice, committing, effectiveMinConfidence, extVersion, flags, judgeCandidate, outdated, lastFingerprint, lastImage, mode, notice,
   preset, sessionCount, setNotice, settings, state, subjects, user,
 } from './store';
 import { TaskForm } from './forms/task-form';
@@ -25,13 +25,35 @@ export async function init() {
   const r = await bg<{ user: import('../../shared/protocol').PublicUser | null }>({ cmd: 'auth.status' }).catch(() => ({ user: null }));
   user.value = r.user;
   if (!user.value) { state.value = { view: 'login' }; return; }
+  await refreshFlags();
   await loadAdapter();
+}
+
+/**
+ * 拉服务端功能开关（background 有 5 分钟缓存；force 时直接请求）。
+ * 全自动被管理员关掉时，正在全自动的面板立即回到手动。
+ */
+export async function refreshFlags(force = false) {
+  try {
+    const r = await bg<FlagsResult>({ cmd: 'flags.get', refresh: force });
+    if (!r?.flags) return;
+    flags.value = r.flags;
+    extVersion.value = r.version ?? '';
+  } catch { return; }
+  if (!flags.value.auto_mode && mode.value === 'auto') {
+    autoPaused.value = false;
+    autoConfirmPending.value = false;
+    mode.value = 'manual';
+    stopAuto();
+    setNotice('warn', '管理员已暂停全自动阅卷，已切回手动');
+  }
 }
 
 export async function refreshUser() {
   const r = await bg<{ user: import('../../shared/protocol').PublicUser | null }>({ cmd: 'auth.status' }).catch(() => ({ user: null }));
   user.value = r.user;
   if (!user.value) { state.value = { view: 'login' }; return; }
+  await refreshFlags(true);
   await loadAdapter();
 }
 
@@ -131,6 +153,8 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
   if (!task) return null;
   const cfg = preset.value?.config;
   if (!cfg) return null;
+  // 版本过旧：面板顶部已有常驻的更新提示，这里只是不再发请求（服务端也会拒绝）
+  if (outdated.value) return null;
 
   clearNotice();
   state.value = { view: 'judging', task, auto: false };
@@ -153,6 +177,8 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
     return r;
   } catch (e) {
     if (gen !== judgeGeneration) return null; // superseded
+    // 服务端说版本过旧：重新拉开关，面板会显示更新提示
+    if (e instanceof BgError && e.status === 426) void refreshFlags(true);
     setNotice('error', errText(e));
     state.value = { view: 'ready', task };
     return null;
@@ -210,13 +236,21 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
       await bg({ cmd: 'record.confirm', gradingId: r.gradingId, modifiedScore: score, isAuto: autoSubmitted });
     } catch (e) {
       console.warn('[EasyGrader] record.confirm failed:', e);
-      if (!autoSubmitted) {
-        setNotice('warn', `分数已写入平台，但服务端记录确认失败：${errText(e)}。评分历史可能不一致，请联系管理员。`);
-        state.value = { view: 'ready', task };
+      // 全自动：服务端没确认（被开关拒绝、版本过旧、登录失效、超时、服务端错误），一律不提交。
+      // 分数已写进输入框但还没提交，停在结果页交给老师
+      if (autoSubmitted) {
+        if (cancel?.aborted) return false;
+        stopAuto();
+        autoPaused.value = false;
+        mode.value = 'manual';
+        if (e instanceof BgError && (e.status === 403 || e.status === 426)) void refreshFlags(true);
+        setNotice('error', `服务端没有确认这次全自动提交：${errText(e)}。分数已填入但未提交，请核对后手动提交`);
+        state.value = { view: 'result', task, result: r };
         return false;
       }
-      // Auto mode: log and continue
-      setNotice('warn', `上一份的服务端记录确认失败：${errText(e)}`);
+      setNotice('warn', `分数已写入平台，但服务端记录确认失败：${errText(e)}。评分历史可能不一致，请联系管理员。`);
+      state.value = { view: 'ready', task };
+      return false;
     }
 
     if (cancel?.aborted) return false;
@@ -267,11 +301,16 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
   }
 }
 
+export function outdatedText(): string {
+  return `扩展版本过旧（当前 ${extVersion.value}，最低要求 ${flags.value.min_extension_version}），请到 chrome://extensions 更新 Easy Grader 后再阅卷`;
+}
+
 // ---------- 自动连续阅卷 ----------
 
 export const isAuto = signal(false);
 
 export function stopAuto(msg?: string) {
+  autoStartGen++;
   const was = isAuto.value;
   isAuto.value = false;
   abortController?.abort();
@@ -287,6 +326,8 @@ export function stopAuto(msg?: string) {
 
 /** 本页面已经确认过一次全自动风险提示，之后再开启不再询问 */
 let autoConfirmed = false;
+/** 开启全自动要先等一次开关刷新；期间切模式/停止/关面板会让这个计数变化，刷新回来后就不再开启 */
+let autoStartGen = 0;
 
 /**
  * 切换阅卷模式。任何视图都能调用：
@@ -294,6 +335,7 @@ let autoConfirmed = false;
  *   - 进入全自动第一次需要在面板里确认，确认后才真正切换
  */
 export function setMode(next: Mode) {
+  autoStartGen++;
   autoConfirmPending.value = false;
   if (next === mode.value) return;
   if (next !== 'auto') {
@@ -307,14 +349,24 @@ export function setMode(next: Mode) {
     else if (!wasAuto) setNotice('info', '已切到手动');
     return;
   }
+  if (!flags.value.auto_mode) { setNotice('warn', '全自动阅卷已被管理员暂停'); return; }
   if (!autoConfirmed) { autoConfirmPending.value = true; return; }
-  startAuto();
+  void startAutoChecked();
 }
 
 /** 面板内确认开启全自动 */
 export function confirmAuto() {
   autoConfirmed = true;
   autoConfirmPending.value = false;
+  void startAutoChecked();
+}
+
+/** 开启前强制刷新一次开关：管理员刚关掉的话不要再开 */
+async function startAutoChecked() {
+  const gen = ++autoStartGen;
+  await refreshFlags(true);
+  if (gen !== autoStartGen) return; // 等待期间老师换了模式、停止了或关了面板
+  if (!flags.value.auto_mode) { setNotice('warn', '全自动阅卷已被管理员暂停'); return; }
   startAuto();
 }
 
@@ -360,6 +412,7 @@ export async function confirmAndContinue(score: number) {
 /** 全自动已暂停/中断时，从就绪页继续 */
 export function resumeAuto() {
   if (mode.value !== 'auto' || isAuto.value || committing.value) return;
+  if (!flags.value.auto_mode) { setMode('manual'); return; }
   autoPaused.value = false;
   void runAuto();
 }
@@ -381,9 +434,13 @@ export async function runAuto() {
   const signal = ctrl.signal;
   while (isAuto.value && !signal.aborted) {
     const started = Date.now();
+    // 每份之前看一眼开关（background 有缓存）：管理员暂停全自动后最晚几分钟内停下，
+    // 服务端在确认接口上还会再拦一次
+    await refreshFlags();
+    if (!isAuto.value || signal.aborted || mode.value !== 'auto') break;
     const r = await judgeOnce();
     if (!r || !isAuto.value || signal.aborted) break;
-    if (r.confidence < s.autoMinConfidence) {
+    if (r.confidence < effectiveMinConfidence.value) {
       isAuto.value = false;
       autoPaused.value = true;
       setNotice('warn', `置信度 ${Math.round(r.confidence * 100)}% 较低，已暂停。核对分数后点「确认并继续自动」，或切回手动`);

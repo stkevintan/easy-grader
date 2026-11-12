@@ -31,6 +31,11 @@ export interface AppConfig {
     /** 评分阶段并行采样次数，取中位数；1 表示只调用一次 */
     sampleCount: number;
   };
+  /**
+   * 额外的模型方案（MODEL_PROFILES，JSON）：名字 → 覆盖 model 里的字段。
+   * 功能开关 model_profile 决定每个用户用哪套；default 就是上面的 model。
+   */
+  modelProfiles: Record<string, Partial<ModelConfig>>;
   /** 两阶段评分：先只转录答卷文字，再拿这份文字 + 评分标准打分 */
   ocr: {
     twoPass: boolean;
@@ -53,6 +58,54 @@ export interface AppConfig {
   /** 是否提供 /demo/ 演示阅卷页 */
   serveDemo: boolean;
   rateLimit: { default: number; auth: number; judge: number };
+}
+
+export type ModelConfig = AppConfig['model'];
+
+/** 方案里可以覆盖的字段及类型；重试相关保持全局一致 */
+const PROFILE_KEYS: Record<string, 'string' | 'number' | 'boolean'> = {
+  baseUrl: 'string',
+  apiKey: 'string',
+  name: 'string',
+  timeoutMs: 'number',
+  temperature: 'number',
+  maxTokens: 'number',
+  reasoningEffort: 'string',
+  scoreWithImage: 'boolean',
+  sampleCount: 'number',
+};
+
+/** 解析 MODEL_PROFILES：{"qwen-max": {"name": "qwen-vl-max"}, ...}；格式不对直接报错，避免静默回退 */
+export function parseModelProfiles(raw: string | undefined): Record<string, Partial<ModelConfig>> {
+  if (!raw || !raw.trim()) return {};
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error('MODEL_PROFILES 不是合法的 JSON');
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('MODEL_PROFILES 必须是 {名字: {...}} 形式的对象');
+  const out: Record<string, Partial<ModelConfig>> = {};
+  for (const [name, v] of Object.entries(data as Record<string, unknown>)) {
+    if (!/^[\w.-]{1,40}$/.test(name) || name === 'default') throw new Error(`MODEL_PROFILES 的方案名不合法：${name}`);
+    if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error(`MODEL_PROFILES.${name} 必须是对象`);
+    const p: Record<string, unknown> = {};
+    for (const [k, x] of Object.entries(v as Record<string, unknown>)) {
+      const want = Object.hasOwn(PROFILE_KEYS, k) ? PROFILE_KEYS[k] : undefined;
+      if (!want) throw new Error(`MODEL_PROFILES.${name} 不支持字段 ${k}`);
+      if (typeof x !== want || (want === 'number' && !Number.isFinite(x))) throw new Error(`MODEL_PROFILES.${name}.${k} 应为 ${want}`);
+      if (want === 'string' && ['baseUrl', 'apiKey', 'name'].includes(k) && !(x as string).trim()) throw new Error(`MODEL_PROFILES.${name}.${k} 不能为空`);
+      // 上限 60 秒：两阶段 + 重试的总时间要留在扩展评分请求的 240 秒期限内
+      if (k === 'timeoutMs' && !(Number.isInteger(x) && (x as number) >= 1000 && (x as number) <= 60_000)) throw new Error(`MODEL_PROFILES.${name}.timeoutMs 应为 1000–60000 的整数`);
+      if (k === 'temperature' && !((x as number) >= 0 && (x as number) <= 2)) throw new Error(`MODEL_PROFILES.${name}.temperature 应在 0–2 之间`);
+      if ((k === 'maxTokens' || k === 'sampleCount') && !(Number.isInteger(x) && (x as number) >= 1)) throw new Error(`MODEL_PROFILES.${name}.${k} 应为正整数`);
+      p[k] = k === 'baseUrl' && typeof x === 'string' ? x.replace(/\/+$/, '') : k === 'reasoningEffort' ? resolveReasoningEffort(String(x)) : x;
+    }
+    if (typeof p.sampleCount === 'number') p.sampleCount = Math.min(5, p.sampleCount);
+    if (typeof p.maxTokens === 'number') p.maxTokens = Math.max(256, p.maxTokens);
+    out[name] = p as Partial<ModelConfig>;
+  }
+  return out;
 }
 
 const num = (v: string | undefined, d: number) => {
@@ -115,6 +168,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       scoreWithImage: bool(env.SCORE_WITH_IMAGE, true),
       sampleCount: Math.min(5, Math.max(1, Math.floor(num(env.MODEL_SAMPLE_COUNT, 1)))),
     },
+    modelProfiles: parseModelProfiles(env.MODEL_PROFILES),
     maxImageBytes: num(env.MAX_IMAGE_BYTES, 4 * 1024 * 1024),
     ocr: {
       twoPass: bool(env.OCR_TWO_PASS, true),

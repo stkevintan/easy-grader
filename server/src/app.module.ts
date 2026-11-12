@@ -23,6 +23,8 @@ import { ModelService } from './judge/model.service';
 import { TaskInfoService } from './judge/task-info.service';
 import { TraceService } from './trace/trace.service';
 import { InviteService } from './invite.service';
+import { FlagController } from './flags/flag.controller';
+import { FlagService } from './flags/flag.service';
 
 @Module({})
 export class AppModule {
@@ -56,7 +58,7 @@ export class AppModule {
           { name: 'judge', ttl: 60_000, limit: cfg.rateLimit.judge },
         ]),
       ],
-      controllers: [AuthController, JudgeController, AdaptersController, AdminController, UnitController],
+      controllers: [AuthController, JudgeController, AdaptersController, AdminController, UnitController, FlagController],
       providers: [
         { provide: APP_CONFIG, useValue: cfg },
         BillingService,
@@ -68,6 +70,7 @@ export class AppModule {
         AdaptersService,
         TraceService,
         InviteService,
+        FlagService,
         // 顺序重要：先鉴权（写入 req.user），再按用户限流
         { provide: APP_GUARD, useClass: AuthGuard },
         { provide: APP_GUARD, useClass: UserThrottlerGuard },

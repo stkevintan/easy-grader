@@ -206,6 +206,7 @@ erDiagram
 | `autoSubmitted` | BOOLEAN | 默认 `false` | 是否自动提交（对外 `isAuto`） |
 | `charged` | BOOLEAN | 默认 `false` | 是否已扣费 |
 | `model` | VARCHAR | 默认空串 | 模型名 |
+| `modelProfile` | VARCHAR | 默认 `default` | 评分时用的模型方案（功能开关 `model_profile`） |
 | `latencyMs` | INTEGER | 默认 `0` | 评分耗时 |
 | `error` | TEXT | 默认空串 | 失败原因 |
 | `createdAt` | DATETIME | 自动 | 创建时间 |
@@ -232,6 +233,41 @@ erDiagram
 | `updatedAt` | DATETIME | 自动 | 更新时间 |
 
 索引：`hostPattern`。
+
+## feature_flag_overrides
+
+功能开关的取值覆盖。开关本身在代码里定义（`server/src/flags/flag-definitions.ts`），这里只存改过的值。
+
+| 列 | 类型 | 约束/默认 | 说明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK，自增 | |
+| `flagKey` | VARCHAR(64) | 非空 | 开关名 |
+| `scope` | VARCHAR | 非空 | `global` / `rollout` / `unit` / `user` |
+| `targetId` | INTEGER | 默认 `0` | `unit` / `user` 时为单位或用户 id，其余为 0 |
+| `value` | SIMPLE-JSON | 非空 | 取值（布尔 / 数字 / 字符串） |
+| `percent` | INTEGER | 可空 | 仅 `rollout`：0–100 |
+| `updatedBy` | INTEGER | 可空 | 最后修改人 |
+| `updatedAt` | DATETIME | 自动 | 更新时间 |
+
+索引：`(flagKey, scope, targetId)` 唯一。
+
+## feature_flag_audit
+
+功能开关修改记录。
+
+| 列 | 类型 | 约束/默认 | 说明 |
+| --- | --- | --- | --- |
+| `id` | INTEGER | PK，自增 | |
+| `flagKey` | VARCHAR(64) | 非空 | 开关名 |
+| `scope` | VARCHAR | 非空 | 同上 |
+| `targetId` | INTEGER | 默认 `0` | 同上 |
+| `before` | SIMPLE-JSON | 可空 | 修改前 `{ value, percent }`，新增时为 `NULL` |
+| `after` | SIMPLE-JSON | 可空 | 修改后 `{ value, percent }`，删除时为 `NULL` |
+| `actorId` | INTEGER | 非空 | 操作人 |
+| `actorName` | VARCHAR | 默认空串 | 操作人用户名（冗余，便于查看） |
+| `createdAt` | DATETIME | 自动 | 修改时间 |
+
+索引：`(flagKey, createdAt)`。
 
 ## 启动迁移
 

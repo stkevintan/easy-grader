@@ -5,8 +5,8 @@
  * - 代抓跨域答卷图片、可见区截图
  * - 管理用户启用的阅卷站点（动态注册内容脚本）
  */
-import type { BgRequest, BgResponse, PublicUser, Settings } from './shared/protocol';
-import { DEFAULT_SETTINGS } from './shared/protocol';
+import type { BgRequest, BgResponse, ClientFlags, FlagsResult, PublicUser, Settings } from './shared/protocol';
+import { DEFAULT_SETTINGS, SAFE_FLAGS } from './shared/protocol';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -15,11 +15,13 @@ interface Store {
   user?: PublicUser;
   settings?: Partial<Settings>;
   sites?: string[];
+  /** 上次从服务端拉到的功能开关，拉取失败时沿用 */
+  flags?: { value: ClientFlags; at: number; userId: number };
 }
 
 const store = {
   async get(): Promise<Store> {
-    return (await chrome.storage.local.get(['token', 'user', 'settings', 'sites'])) as Store;
+    return (await chrome.storage.local.get(['token', 'user', 'settings', 'sites', 'flags'])) as Store;
   },
   set: (v: Partial<Store>) => chrome.storage.local.set(v),
   remove: (keys: (keyof Store)[]) => chrome.storage.local.remove(keys),
@@ -42,9 +44,10 @@ class ApiError extends Error {
   }
 }
 
-async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 15000): Promise<T> {
+/** asToken：用指定的 token 发请求（不传则读当前存储的）；401 时只有存储的仍是这个 token 才清掉登录态 */
+async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 15000, asToken?: string): Promise<T> {
   const { serverUrl } = await settings();
-  const { token } = await store.get();
+  const token = asToken ?? (await store.get()).token;
   let res: Response;
   try {
     res = await fetch(serverUrl.replace(/\/+$/, '') + path, {
@@ -52,6 +55,8 @@ async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 
       headers: {
         ...(body !== undefined ? { 'content-type': 'application/json' } : {}),
         ...(token ? { authorization: `Bearer ${token}` } : {}),
+        // 服务端据此统计版本分布，并拒绝低于 min_extension_version 的扩展评分/提交
+        'x-eg-version': EXT_VERSION,
       },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       signal: AbortSignal.timeout(timeoutMs),
@@ -62,11 +67,56 @@ async function api<T>(method: string, path: string, body?: unknown, timeoutMs = 
   }
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
-    if (res.status === 401) await store.remove(['token', 'user']);
+    if (res.status === 401 && (await store.get()).token === token) await store.remove(['token', 'user', 'flags']);
     const msg = Array.isArray(data?.message) ? data.message.join('；') : data?.message;
     throw new ApiError(msg || `服务端错误（HTTP ${res.status}）`, res.status);
   }
   return data as T;
+}
+
+const EXT_VERSION = chrome.runtime.getManifest().version;
+/** 开关缓存时间：面板打开和全自动每份之前都会读，这期间不重复请求 */
+const FLAGS_TTL_MS = 5 * 60 * 1000;
+
+/** 同一时间只发一个开关请求：并发的调用共用它，避免晚到的旧响应覆盖新值 */
+let flagsInflight: Promise<FlagsResult> | null = null;
+
+async function getFlags(refresh: boolean): Promise<FlagsResult> {
+  if (!refresh) {
+    const { flags: cached, user, token } = await store.get();
+    if (!token) return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
+    // 换了账号的缓存不能用：不同用户的开关可能不同
+    if (cached && user && cached.userId === user.id && Date.now() - cached.at < FLAGS_TTL_MS) {
+      return { flags: cached.value, stale: false, version: EXT_VERSION };
+    }
+  }
+  // 正在请求时共用这一个（它本身就是最新发出的请求）
+  if (flagsInflight) return flagsInflight;
+  const p = fetchFlags().finally(() => { if (flagsInflight === p) flagsInflight = null; });
+  flagsInflight = p;
+  return p;
+}
+
+async function fetchFlags(): Promise<FlagsResult> {
+  const { flags: cached, user, token } = await store.get();
+  if (!token) return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
+  const mine = cached && user && cached.userId === user.id ? cached : undefined;
+  // 整个请求绑定在开始时的这次登录上：期间登出或换了账号，结果作废，不写缓存
+  const sameSession = async () => (await store.get()).token === token;
+  try {
+    const r = await api<{ flags: Partial<ClientFlags> }>('GET', '/api/flags', undefined, 15000, token);
+    if (!(await sameSession())) return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
+    // 旧服务端没有某个字段时用保守值补齐
+    const value: ClientFlags = { ...SAFE_FLAGS, ...r.flags };
+    if (user) await store.set({ flags: { value, at: Date.now(), userId: user.id } });
+    return { flags: value, stale: false, version: EXT_VERSION };
+  } catch (e) {
+    // 登录已失效（401）或会话已变：不能再用旧缓存，按保守取值
+    if ((e instanceof ApiError && e.status === 401) || !(await sameSession())) {
+      return { flags: SAFE_FLAGS, stale: true, version: EXT_VERSION };
+    }
+    return { flags: mine?.value ?? SAFE_FLAGS, stale: true, version: EXT_VERSION };
+  }
 }
 
 const qs = (o: Record<string, string>) => new URLSearchParams(o).toString();
@@ -172,7 +222,7 @@ async function handle(req: BgRequest, sender: Sender): Promise<unknown> {
       return { user: r.user };
     }
     case 'auth.logout':
-      await store.remove(['token', 'user']);
+      await store.remove(['token', 'user', 'flags']);
       return {};
     case 'billing.redeem':
       return api('POST', '/api/billing/redeem', { code: req.code });
@@ -196,6 +246,8 @@ async function handle(req: BgRequest, sender: Sender): Promise<unknown> {
     }
     case 'meta.get':
       return api('GET', '/api/meta');
+    case 'flags.get':
+      return getFlags(req.refresh ?? false);
     case 'adapter.resolve':
       return api('GET', `/api/adapters/resolve?${qs({ host: req.host, path: req.path })}`);
     case 'adapter.save':

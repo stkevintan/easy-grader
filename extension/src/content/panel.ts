@@ -13,7 +13,7 @@ import { cancelPick } from './picker';
 import { PANEL_CSS } from './panel.css';
 import { PanelApp } from './panel/PanelApp';
 import {
-  init, stopAuto, maybeAutoJudge, isAuto,
+  init, stopAuto, maybeAutoJudge, isAuto, refreshFlags,
 } from './panel/controller';
 import {
   sessionCount, preset, state, user, isPicking, mode, autoPaused, autoConfirmPending,
@@ -25,6 +25,7 @@ export class Panel {
   private appEl: HTMLElement | null = null;
   private judgeWatcher: ReturnType<typeof setInterval> | null = null;
   private headerTimer: ReturnType<typeof setInterval> | null = null;
+  private flagsTimer: ReturnType<typeof setInterval> | null = null;
   private titleEl: HTMLElement | null = null;
   private creditsEl: HTMLElement | null = null;
 
@@ -94,6 +95,8 @@ export class Panel {
 
     // 更新标题栏（信号 → 非 Preact DOM）
     this.headerTimer = setInterval(() => this.updateHeader(), 300);
+    // 面板开着时每 5 分钟刷新一次功能开关（background 也按 5 分钟缓存）
+    this.flagsTimer = setInterval(() => { if (user.value) void refreshFlags(); }, 5 * 60 * 1000);
 
     // 挂载 Preact
     render(h(PanelApp, null), appEl);
@@ -123,6 +126,7 @@ export class Panel {
     autoConfirmPending.value = false;
     this.stopJudgeWatcher();
     if (this.headerTimer) { clearInterval(this.headerTimer); this.headerTimer = null; }
+    if (this.flagsTimer) { clearInterval(this.flagsTimer); this.flagsTimer = null; }
     cancelPick();
     if (this.appEl) { render(null, this.appEl); this.appEl = null; }
     this.host?.remove();

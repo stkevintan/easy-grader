@@ -304,6 +304,7 @@ export class AdminController {
         'r.finalScore AS finalScore',
         'r.confidence AS confidence',
         'r.model AS model',
+        'r.modelProfile AS modelProfile',
         'r.latencyMs AS latencyMs',
         'r.error AS error',
         'r.createdAt AS createdAt',

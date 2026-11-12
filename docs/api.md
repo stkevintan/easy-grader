@@ -6,6 +6,7 @@
 - token 由 `/api/auth/login` 或 `/api/auth/register` 返回，默认 7 天过期；改密码、被停用后旧 token 立即失效。
 - 管理接口还要求用户 `role = admin`。
 - 分页参数：`page` 从 1 开始（默认 1），`pageSize` 默认 20、最大 100。
+- 扩展在每个请求上带 `X-EG-Version: <扩展版本>`。功能开关 `min_extension_version` 不为空时，版本更低或没带这个头的 `POST /api/judge`、`POST /api/records/:gradingId/confirm` 返回 `426`。
 - 限流：默认每用户/IP 每分钟 120 次；`/api/auth/*` 10 次；`/api/judge` 30 次。超限返回 `429`。
 
 ## 错误格式
@@ -24,6 +25,7 @@
 | `401` | 未登录、token 过期或已失效 |
 | `403` | 无权限、账号被停用、未开放注册 |
 | `404` | 资源不存在（任务、记录、预设、用户等） |
+| `426` | 扩展版本低于 `min_extension_version`，响应体额外带 `code: "EXTENSION_OUTDATED"`、`minVersion` |
 | `429` | 触发限流 |
 | `502` | 模型输出无法解析 |
 | `503` | 模型上游持续失败/不可用 |
@@ -293,6 +295,20 @@
 
 响应 `200`：`{ "ok": true }`。记录不存在或不是 `done` 返回 `404`。
 
+`isAuto: true` 时服务端按功能开关再校验一次：`auto_mode` 关闭，或这条记录的置信度低于 `auto_min_confidence`，返回 `403`（分数不会被记为自动提交）。
+
+## 功能开关
+
+### `GET /api/flags`
+
+当前用户的开关取值，只含下发给扩展的开关。
+
+```json
+{ "flags": { "auto_mode": true, "auto_min_confidence": 0.7, "min_extension_version": "" } }
+```
+
+以后可能增加字段；扩展对缺失的字段使用保守值。
+
 ### `GET /api/records`
 
 查询当前用户的评分记录。
@@ -459,6 +475,18 @@
 ```
 
 管理端沿用 `id`、`finalScore` 等内部字段名；扩展/用户端使用 `gradingId`、`modifiedScore`。
+
+### 功能开关
+
+| 方法/路径 | 说明 |
+| --- | --- |
+| `GET /api/admin/flags` | 全部开关定义（类型、默认值、说明、负责人、计划删除时间）和覆盖列表，以及可选的模型方案 `modelProfiles` |
+| `PUT /api/admin/flags/:key` | 新增或修改一条覆盖：`{ scope, targetId?, username?, value, percent? }`；`scope=user` 时可以用精确用户名代替 `targetId` |
+| `DELETE /api/admin/flags/:key?scope=&targetId=` | 删除一条覆盖 |
+| `GET /api/admin/flags/evaluate/:userId` | 某个用户每个开关的最终取值和来源：`{ key: { value, source, targetId? } }` |
+| `GET /api/admin/flags-audit?key=&page=&pageSize=` | 修改记录，新的在前 |
+
+`scope`：`global`（替代默认值）、`rollout`（按比例，需 `percent` 0–100）、`unit`（`targetId` 为单位 id）、`user`（`targetId` 为用户 id）。`value` 的类型必须和开关定义一致，并通过开关自己的校验（比如 `model_profile` 只能是已配置的方案）。
 
 ### 适配预设
 

@@ -14,6 +14,7 @@ import { BillingService } from '../billing/billing.service';
 import { APP_CONFIG, AppConfig } from '../config';
 import { GradingTask, JudgeRecord } from '../entities';
 import type { UpsertTaskDto } from './judge.dto';
+import { FlagService } from '../flags/flag.service';
 import { GoldService } from './gold.service';
 import { ModelOutputError, ModelService } from './model.service';
 import {
@@ -39,6 +40,7 @@ export class JudgeService {
     private readonly billing: BillingService,
     private readonly model: ModelService,
     private readonly gold: GoldService,
+    private readonly flags: FlagService,
   ) {}
 
   // ---------- 任务 ----------
@@ -170,7 +172,10 @@ export class JudgeService {
     try {
       // 自动学习：把本题老师确认过的成绩作为评分示例，帮模型校准尺度
       const examples = await this.gold.forTask(userId, task.id, rec.id);
-      const v = await this.model.grade(task, image, sha256, rec.id, examples);
+      // 功能开关 model_profile 决定这个用户用哪套模型方案，记在评分记录上便于对比
+      const profile = await this.flags.get<string>('model_profile', userId);
+      rec.modelProfile = profile;
+      const v = await this.model.grade(task, image, sha256, rec.id, examples, profile);
       Object.assign(rec, {
         status: 'done',
         aiScore: v.score,
@@ -206,6 +211,8 @@ export class JudgeService {
     if (!r || r.status !== 'done') throw new NotFoundException('评分记录不存在');
     const task = await this.taskEntity(userId, r.taskId);
     if (modifiedScore > task.maxScore) throw new BadRequestException('分数超过满分');
+    // 全自动提交：不能只靠扩展自觉，服务端再按开关校验一次（关掉、或置信度低于下限都拒绝）
+    if (isAuto) await this.flags.assertAutoAllowed(userId, r.confidence);
     r.finalScore = modifiedScore;
     r.autoSubmitted = isAuto;
     r.confirmedAt = new Date();

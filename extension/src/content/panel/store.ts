@@ -6,7 +6,8 @@
  */
 import { signal, computed } from '@preact/signals';
 import type { AdapterConfig } from '../../shared/adapter-config';
-import type { GradingInfo, PublicUser, Settings, TaskInfo } from '../../shared/protocol';
+import type { ClientFlags, GradingInfo, PublicUser, Settings, TaskInfo } from '../../shared/protocol';
+import { SAFE_FLAGS, compareVersions } from '../../shared/protocol';
 import { TaskForm } from './forms/task-form';
 
 // ---------- 状态机类型 ----------
@@ -27,6 +28,18 @@ export const user    = signal<PublicUser | null>(null);
 export const notice  = signal<{ kind: 'info' | 'ok' | 'warn' | 'error'; text: string } | null>(null);
 export const settings = signal<Settings | null>(null);
 export const subjects = signal<string[]>(['语文', '数学', '英语', '历史', '地理', '道德与法治', '政治', '物理', '化学', '生物', '其他']);
+/** 服务端功能开关；拉到之前按保守取值（全自动不可用） */
+export const flags   = signal<ClientFlags>(SAFE_FLAGS);
+export const extVersion = signal('');
+
+/** 全自动实际使用的置信度下限：老师设置和服务端下限取更严的那个 */
+export const effectiveMinConfidence = computed(() =>
+  Math.max(settings.value?.autoMinConfidence ?? 0, flags.value.auto_min_confidence));
+/** 扩展版本低于服务端要求的最低版本 */
+export const outdated = computed(() => {
+  const min = flags.value.min_extension_version;
+  return !!min && !!extVersion.value && compareVersions(extVersion.value, min) < 0;
+});
 export const preset  = signal<import('../../shared/protocol').Preset | null>(null);
 
 /**

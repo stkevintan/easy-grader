@@ -9,7 +9,10 @@ import {
   Post,
   Put,
   Query,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import { CLIENT_VERSION_HEADER, FlagService } from '../flags/flag.service';
 import { ThrottleBucket } from '../common/throttler.guard';
 import { AuthUser, CurrentUser } from '../common/auth.guard';
 import { ConfirmDto, FindTaskQuery, JudgeDto, ListQuery, SUBJECTS, UpsertTaskDto } from './judge.dto';
@@ -18,7 +21,10 @@ import { JudgeService } from './judge.service';
 
 @Controller('api')
 export class JudgeController {
-  constructor(private readonly judge: JudgeService) {}
+  constructor(
+    private readonly judge: JudgeService,
+    private readonly flags: FlagService,
+  ) {}
 
   @Get('meta')
   meta() {
@@ -54,13 +60,15 @@ export class JudgeController {
   @ThrottleBucket('judge')
   @HttpCode(200)
   @Post('judge')
-  run(@CurrentUser() u: AuthUser, @Body() dto: JudgeDto) {
+  async run(@CurrentUser() u: AuthUser, @Body() dto: JudgeDto, @Req() req: Request) {
+    await this.flags.assertClientVersion(u.id, req.headers[CLIENT_VERSION_HEADER]);
     return this.judge.judge(u.id, dto.taskId, dto.image, dto.force);
   }
 
   @HttpCode(200)
   @Post('records/:id/confirm')
-  confirm(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ConfirmDto) {
+  async confirm(@CurrentUser() u: AuthUser, @Param('id') id: string, @Body() dto: ConfirmDto, @Req() req: Request) {
+    await this.flags.assertClientVersion(u.id, req.headers[CLIENT_VERSION_HEADER]);
     return this.judge.confirm(u.id, id, dto.modifiedScore, dto.isAuto ?? false);
   }
 
