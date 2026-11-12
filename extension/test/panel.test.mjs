@@ -185,3 +185,16 @@ test('全自动已暂停后等待换卷：停止按钮会退出全自动', async
   assert.equal(p.store.mode.value, 'manual');
   assert.equal(p.store.state.value.view, 'ready');
 });
+
+test('上一次提交还没结束时，不能重新开始全自动', async () => {
+  const { p, flush } = await setup();
+  p.store.mode.value = 'auto';
+  p.store.state.value = { view: 'ready', task };
+  p.store.committing.value = true;
+  await flush();
+  await p.controller.runAuto();
+  assert.equal(p.controller.isAuto.value, false);
+  assert.equal(p.store.notice.value?.kind, 'warn');
+  p.controller.resumeAuto();
+  assert.equal(p.controller.isAuto.value, false);
+});

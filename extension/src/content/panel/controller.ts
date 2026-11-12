@@ -255,6 +255,7 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
     state.value = { view: 'ready', task };
     return true;
   } catch (e) {
+    if (cancel?.aborted) return false; // 已被停止：不再改视图，免得覆盖新的结果
     stopAuto();
     setNotice('error', errText(e));
     state.value = { view: 'result', task, result: r };
@@ -333,8 +334,13 @@ function startAuto() {
 
 /** 低置信度暂停后：老师确认这一份的分数，提交后继续循环 */
 export async function confirmAndContinue(score: number) {
-  const ok = await commitScore(score, true, false);
-  if (mode.value !== 'auto') return;
+  // 这次提交有自己的 AbortController：停止/切模式时 stopAuto() 会取消它，
+  // 取消后不改视图、不重启循环
+  const ctrl = new AbortController();
+  abortController = ctrl;
+  const ok = await commitScore(score, true, false, ctrl.signal);
+  if (abortController === ctrl) abortController = null;
+  if (ctrl.signal.aborted || mode.value !== 'auto') return;
   if (!ok) {
     // 提交失败（错误提示已由 commitScore 给出）：和循环里的失败一样回到手动
     autoPaused.value = false;
@@ -347,13 +353,18 @@ export async function confirmAndContinue(score: number) {
 
 /** 全自动已暂停/中断时，从就绪页继续 */
 export function resumeAuto() {
-  if (mode.value !== 'auto' || isAuto.value) return;
+  if (mode.value !== 'auto' || isAuto.value || committing.value) return;
   autoPaused.value = false;
   void runAuto();
 }
 
 export async function runAuto() {
   if (isAuto.value) return; // 已经有一个循环在跑，不再启动第二个
+  if (committing.value) {
+    // 上一次（已取消的）提交还没结束：不要再发起评分，否则新结果的提交会被锁拒绝
+    setNotice('warn', '上一份还在收尾，请稍后再开始自动阅卷');
+    return;
+  }
   const s = settings.value;
   if (!s) return;
   const cur = state.value;

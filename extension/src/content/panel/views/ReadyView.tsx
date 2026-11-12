@@ -2,7 +2,7 @@
 import { h } from 'preact';
 import type { TaskInfo } from '../../../shared/protocol';
 import { isAuto, judgeOnce, openTaskForm, resumeAuto, setMode } from '../controller';
-import { mode, sessionCount } from '../store';
+import { committing, mode, sessionCount } from '../store';
 
 const fmt = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
 
@@ -31,7 +31,7 @@ export function ReadyView({ task }: Props) {
       ) : (
         <div class="foot stack">
           {m === 'auto' ? (
-            <button class="btn primary grow" onClick={() => resumeAuto()}>继续自动阅卷</button>
+            <button class="btn primary grow" disabled={committing.value} onClick={() => resumeAuto()}>继续自动阅卷</button>
           ) : (
             <button class="btn primary grow" onClick={() => void judgeOnce()}>获取建议分</button>
           )}
