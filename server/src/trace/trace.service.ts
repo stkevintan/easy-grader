@@ -53,6 +53,8 @@ export interface TraceInput {
   prompt: string;
   /** 评分提示词与解析规则的版本；每次改提示词、引用校验或汇总逻辑都要加一 */
   promptVersion?: number;
+  /** 功能开关 model_profile 选中的模型方案 */
+  modelProfile?: string;
   /** 提示词里引用的老师确认示例（只有 recordId 和分数，文字已在 prompt 里） */
   goldExamples?: { recordId: number; score: number }[];
   /** 两阶段评分的第一阶段：纯转录 */
@@ -101,7 +103,8 @@ export class TraceService {
       await mkdir(this.cfg.traceDir, { recursive: true });
       await writeFile(join(this.cfg.traceDir, imageFile), Buffer.from(input.imageDataUrl.slice(input.imageDataUrl.indexOf(',') + 1), 'base64'));
 
-      const model = this.cfg.model;
+      const profile = input.modelProfile ?? 'default';
+      const model = { ...this.cfg.model, ...(profile !== 'default' && Object.hasOwn(this.cfg.modelProfiles, profile) ? this.cfg.modelProfiles[profile] : {}) };
       const trace = {
         version: 2,
         promptVersion: input.promptVersion ?? null,
@@ -130,6 +133,7 @@ export class TraceService {
         ocr: input.ocr ?? null,
         samples: input.samples ?? [],
         modelConfig: {
+          profile,
           name: model.name,
           temperature: model.temperature,
           maxTokens: model.maxTokens,

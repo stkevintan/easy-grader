@@ -10,6 +10,9 @@ import { configureApp, isAllowedOrigin } from '../src/main';
 import { buildOcrPrompt, buildPrompt, extractJson, isBlankOcr, ModelOutputError, ModelService, parseVerdict, snapScore } from '../src/judge/model.service';
 import { pickGoldExamples } from '../src/judge/gold.service';
 import { hostMatches, normalizeHostPattern } from '../src/adapters/adapter-config';
+import { parseModelProfiles } from '../src/config';
+import { compareVersions } from '../src/flags/flag-definitions';
+import { rolloutBucket } from '../src/flags/flag.service';
 
 /** 一张 1x1 透明 PNG 太小（<100 字节会被拒），这里拼一张足够大的合法 data URL */
 function fakePng(seed: string): string {
@@ -414,6 +417,7 @@ describe('OpenAI 兼容模型接入', () => {
       GOLD_MAX_EXAMPLES: '4',
       MODEL_SAMPLE_COUNT: '3',
       SCORE_WITH_IMAGE: 'false',
+      MODEL_PROFILES: JSON.stringify({ cheap: { name: 'qwen-vl-cheap', sampleCount: 1 } }),
     } as NodeJS.ProcessEnv);
     const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
     app = mod.createNestApplication({ logger: false });
@@ -593,6 +597,160 @@ describe('OpenAI 兼容模型接入', () => {
     expect((await http.get('/api/auth/me').set(h)).body.credits).toBe(19);
     ocrReply = '作者思念外婆';
   });
+
+  it('功能开关 model_profile：按用户切换模型方案，评分记录记下方案名', async () => {
+    const http = request(app.getHttpServer());
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    const ah = { authorization: `Bearer ${admin.body.token}` };
+    const unit = await http.post('/api/admin/units').set(ah).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set(ah).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const reg = await http.post('/api/auth/register').send({ username: 'profile_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
+    const h = { authorization: `Bearer ${reg.body.token}` };
+    const t = await http
+      .put('/api/tasks')
+      .set(h)
+      .send({ platformHost: 'profile.example', exam: { exam: '月考', subject: '语文', q_index: '3' }, question: { type: '其他', content: { score: 6 } } })
+      .expect(200);
+
+    // 不存在的方案被拒；cheap 在 MODEL_PROFILES 里
+    await http.put('/api/admin/flags/model_profile').set(ah).send({ scope: 'user', targetId: reg.body.user.id, value: 'nope' }).expect(400);
+    await http.put('/api/admin/flags/model_profile').set(ah).send({ scope: 'user', targetId: reg.body.user.id, value: 'cheap' }).expect(200);
+
+    ocrReply = '作者思念外婆';
+    reply = '{"score": 3, "confidence": 0.8, "reasons": [], "comment": ""}';
+    const before = seen.length;
+    await http.post('/api/judge').set(h).send({ taskId: t.body.taskId, image: fakePng('profile') }).expect(200);
+    const calls = seen.slice(before);
+    // 方案里 sampleCount=1：一次转录 + 一次评分，都用方案里的模型名
+    expect(calls).toHaveLength(2);
+    expect(calls.every((c) => c.body.model === 'qwen-vl-cheap')).toBe(true);
+    const recs = await http.get('/api/admin/records').set(ah).query({ q: 'profile_user' }).expect(200);
+    expect(recs.body.items[0]).toMatchObject({ modelProfile: 'cheap', model: 'qwen-vl-test' });
+    const ev = await http.get(`/api/admin/flags/evaluate/${reg.body.user.id}`).set(ah).expect(200);
+    expect(ev.body.model_profile).toEqual({ value: 'cheap', source: 'user', targetId: reg.body.user.id });
+    // model_profile 只在服务端用，不下发给扩展
+    const mine = await http.get('/api/flags').set(h).expect(200);
+    expect(mine.body.flags).not.toHaveProperty('model_profile');
+  });
+});
+
+describe('功能开关', () => {
+  let app: INestApplication;
+  let http: ReturnType<typeof request>;
+  let ah: { authorization: string };
+
+  beforeAll(async () => {
+    const cfg = loadConfig({
+      DB_PATH: ':memory:', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: ADMIN.password, INITIAL_CREDITS: '5',
+      RATE_LIMIT_DEFAULT: '10000', RATE_LIMIT_AUTH: '10000', RATE_LIMIT_JUDGE: '10000',
+    } as NodeJS.ProcessEnv);
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    app = mod.createNestApplication({ logger: false });
+    configureApp(app, cfg);
+    await app.init();
+    http = request(app.getHttpServer());
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    ah = { authorization: `Bearer ${admin.body.token}` };
+  });
+  afterAll(() => app?.close());
+
+  async function newUser(name: string, unitId?: number) {
+    const uid = unitId ?? (await http.post('/api/admin/units').set(ah).send({ name: `u-${name}` }).expect(201)).body.id;
+    const inv = await http.post('/api/admin/invites').set(ah).send({ unitId: uid, count: 1, credits: 5, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const r = await http.post('/api/auth/register').send({ username: name, password: 'password-123', inviteToken: inv.body.tokens[0].token }).expect(201);
+    return { id: r.body.user.id as number, unitId: uid as number, h: { authorization: `Bearer ${r.body.token}` } };
+  }
+
+  it('默认值下发给扩展；普通用户不能改开关', async () => {
+    const u = await newUser('flag_default');
+    const r = await http.get('/api/flags').set(u.h).expect(200);
+    expect(r.body.flags).toEqual({ auto_mode: true, auto_min_confidence: 0.7, min_extension_version: '' });
+    await http.put('/api/admin/flags/auto_mode').set(u.h).send({ scope: 'global', value: false }).expect(403);
+    await http.get('/api/flags').expect(401);
+  });
+
+  it('优先级 user > unit > rollout > global > 默认；类型和取值都要校验；改动有审计', async () => {
+    const a = await newUser('flag_a');
+    const b = await newUser('flag_b', a.unitId);
+    const c = await newUser('flag_c');
+    const put = (body: object, code = 200) => http.put('/api/admin/flags/auto_min_confidence').set(ah).send(body).expect(code);
+    await put({ scope: 'global', value: 'x' }, 400);
+    await put({ scope: 'global', value: 1.5 }, 400);
+    await put({ scope: 'unit', value: 0.8 }, 400); // 缺 targetId
+    await put({ scope: 'unit', targetId: 99999, value: 0.8 }, 400);
+    await http.put('/api/admin/flags/nope').set(ah).send({ scope: 'global', value: 1 }).expect(404);
+
+    await put({ scope: 'global', value: 0.75 });
+    await put({ scope: 'unit', targetId: a.unitId, value: 0.8 });
+    await put({ scope: 'user', targetId: a.id, value: 0.9 });
+    const val = async (u: { h: { authorization: string } }) => (await http.get('/api/flags').set(u.h)).body.flags.auto_min_confidence;
+    expect(await val(a)).toBe(0.9);
+    expect(await val(b)).toBe(0.8);
+    expect(await val(c)).toBe(0.75);
+
+    // 百分比放量：100% 覆盖 global，0% 不生效；unit 仍然优先
+    await put({ scope: 'rollout', value: 0.85 }, 400); // 缺 percent
+    await put({ scope: 'rollout', value: 0.85, percent: 100 });
+    expect(await val(c)).toBe(0.85);
+    expect(await val(b)).toBe(0.8);
+    await put({ scope: 'rollout', value: 0.85, percent: 0 });
+    expect(await val(c)).toBe(0.75);
+
+    await http.delete('/api/admin/flags/auto_min_confidence').set(ah).query({ scope: 'user', targetId: a.id }).expect(200);
+    expect(await val(a)).toBe(0.8);
+    await http.delete('/api/admin/flags/auto_min_confidence').set(ah).query({ scope: 'user', targetId: a.id }).expect(404);
+
+    const list = await http.get('/api/admin/flags').set(ah).expect(200);
+    const def = list.body.flags.find((f: { key: string }) => f.key === 'auto_min_confidence');
+    expect(def).toMatchObject({ type: 'number', default: 0.7, owner: expect.any(String), removeBy: expect.any(String) });
+    expect(def.overrides.map((o: { scope: string }) => o.scope).sort()).toEqual(['global', 'rollout', 'unit']);
+    expect(def.overrides.find((o: { scope: string }) => o.scope === 'unit').targetName).toBe('u-flag_a');
+
+    const audit = await http.get('/api/admin/flags-audit').set(ah).query({ key: 'auto_min_confidence' }).expect(200);
+    expect(audit.body.items[0]).toMatchObject({ scope: 'user', before: { value: 0.9, percent: null }, after: null, actorName: 'admin' });
+    expect(audit.body.total).toBe(6); // global、unit、user、rollout 两次、删除 user
+  });
+
+  it('auto_mode 关闭后服务端拒绝全自动提交；手动提交不受影响；置信度低于下限也拒绝', async () => {
+    const u = await newUser('flag_auto');
+    const t = await http.put('/api/tasks').set(u.h).send({ platformHost: 'f.example', exam: { exam: '期中', subject: '语文', q_index: '1' }, question: { type: '其他', content: { score: 6 } } }).expect(200);
+    const judge = (seed: string) => http.post('/api/judge').set(u.h).send({ taskId: t.body.taskId, image: fakePng(seed) }).expect(200);
+    // mock 置信度 0.3：先把这个用户的下限调到 0.2
+    await http.put('/api/admin/flags/auto_min_confidence').set(ah).send({ scope: 'user', targetId: u.id, value: 0.2 }).expect(200);
+    const a = await judge('fa');
+    await http.post(`/api/records/${a.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: true }).expect(200);
+
+    await http.put('/api/admin/flags/auto_mode').set(ah).send({ scope: 'unit', targetId: u.unitId, value: false }).expect(200);
+    expect((await http.get('/api/flags').set(u.h)).body.flags.auto_mode).toBe(false);
+    const b = await judge('fb');
+    const denied = await http.post(`/api/records/${b.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: true }).expect(403);
+    expect(denied.body.message).toContain('全自动阅卷已被管理员暂停');
+    await http.post(`/api/records/${b.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: false }).expect(200);
+
+    await http.delete('/api/admin/flags/auto_mode').set(ah).query({ scope: 'unit', targetId: u.unitId }).expect(200);
+    await http.delete('/api/admin/flags/auto_min_confidence').set(ah).query({ scope: 'user', targetId: u.id }).expect(200);
+    const c = await judge('fc');
+    const low = await http.post(`/api/records/${c.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: true }).expect(403);
+    expect(low.body.message).toContain('置信度低于 75%'); // 上一个用例设的 global 0.75
+  });
+
+  it('min_extension_version：旧版本或没带版本头的扩展不能评分和提交，返回 426', async () => {
+    const u = await newUser('flag_ver');
+    const t = await http.put('/api/tasks').set(u.h).send({ platformHost: 'v.example', exam: { exam: '期中', subject: '语文', q_index: '1' }, question: { type: '其他', content: { score: 6 } } }).expect(200);
+    await http.put('/api/admin/flags/min_extension_version').set(ah).send({ scope: 'global', value: 'v1' }).expect(400);
+    await http.put('/api/admin/flags/min_extension_version').set(ah).send({ scope: 'global', value: '0.2.0' }).expect(200);
+    const body = { taskId: t.body.taskId, image: fakePng('v') };
+    const old = await http.post('/api/judge').set(u.h).set('x-eg-version', '0.1.9').send(body).expect(426);
+    expect(old.body).toMatchObject({ code: 'EXTENSION_OUTDATED', minVersion: '0.2.0' });
+    await http.post('/api/judge').set(u.h).send(body).expect(426);
+    const ok = await http.post('/api/judge').set(u.h).set('x-eg-version', '0.2.0').send(body).expect(200);
+    await http.post(`/api/records/${ok.body.gradingId}/confirm`).set(u.h).set('x-eg-version', '0.1.1').send({ modifiedScore: 3 }).expect(426);
+    await http.post(`/api/records/${ok.body.gradingId}/confirm`).set(u.h).set('x-eg-version', '0.10.0').send({ modifiedScore: 3 }).expect(200);
+    // 其他接口（登录、拉开关）不受影响，扩展才能拿到最低版本并提示更新
+    expect((await http.get('/api/flags').set(u.h).expect(200)).body.flags.min_extension_version).toBe('0.2.0');
+    await http.delete('/api/admin/flags/min_extension_version').set(ah).query({ scope: 'global' }).expect(200);
+    await http.post('/api/judge').set(u.h).send({ ...body, image: fakePng('v2') }).expect(200);
+  });
 });
 
 describe('限流', () => {
@@ -770,6 +928,31 @@ describe('纯函数', () => {
     expect(hostMatches('a.b.foo.com', 'foo.com')).toBe(true);
     expect(hostMatches('evilfoo.com', 'foo.com')).toBe(false);
     expect(hostMatches('localhost:3000', 'localhost')).toBe(true);
+  });
+
+  it('MODEL_PROFILES 解析与校验', () => {
+    expect(parseModelProfiles('')).toEqual({});
+    expect(parseModelProfiles('{"fast": {"name": "m", "baseUrl": "http://x/v1/", "reasoningEffort": "off", "sampleCount": 9}}')).toEqual({
+      fast: { name: 'm', baseUrl: 'http://x/v1', reasoningEffort: '', sampleCount: 5 },
+    });
+    expect(() => parseModelProfiles('{')).toThrow('JSON');
+    expect(() => parseModelProfiles('{"default": {}}')).toThrow('方案名');
+    expect(() => parseModelProfiles('{"a": {"maxRetries": 3}}')).toThrow('不支持字段');
+    expect(() => parseModelProfiles('{"a": {"temperature": "0.1"}}')).toThrow('应为 number');
+  });
+
+  it('版本比较与放量分桶', () => {
+    expect(compareVersions('0.10.0', '0.9.9')).toBeGreaterThan(0);
+    expect(compareVersions('1.0', '1.0.0')).toBe(0);
+    expect(compareVersions('0.1.9', '0.2.0')).toBeLessThan(0);
+    expect(rolloutBucket('k', 1)).toBe(rolloutBucket('k', 1));
+    const buckets = Array.from({ length: 1000 }, (_, i) => rolloutBucket('auto_mode', i));
+    expect(Math.min(...buckets)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...buckets)).toBeLessThan(100);
+    // 大致均匀：落在前 30% 的用户约占 30%
+    const share = buckets.filter((b) => b < 30).length / buckets.length;
+    expect(share).toBeGreaterThan(0.24);
+    expect(share).toBeLessThan(0.36);
   });
 
   it('CORS 来源', () => {

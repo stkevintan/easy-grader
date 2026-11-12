@@ -4,7 +4,8 @@
  */
 import { h, Fragment } from 'preact';
 import { useSignal, useSignalEffect } from '@preact/signals';
-import { state, notice, user } from './store';
+import { state, notice, user, outdated } from './store';
+import { outdatedText } from './controller';
 import type { PanelState } from './store';
 import { LoginView } from './views/LoginView';
 import { AdaptView } from './views/AdaptView';
@@ -34,6 +35,7 @@ export function PanelApp() {
 
   return (
     <>
+      {outdated.value && u && <div class="msg error" role="alert">{outdatedText()}</div>}
       {n && <div class={`msg ${n.kind}`} role={n.kind === 'error' ? 'alert' : 'status'}>{n.text}</div>}
       {(s.view === 'ready' || s.view === 'judging' || s.view === 'result' || s.view === 'waiting') && <ModeBar />}
       {renderView(s)}

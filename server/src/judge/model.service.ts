@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { APP_CONFIG, AppConfig } from '../config';
+import { APP_CONFIG, AppConfig, ModelConfig } from '../config';
 import type { GradingTask } from '../entities';
 import { TraceInput, TraceResponse, TraceService } from '../trace/trace.service';
 import type { GoldExample } from './gold.service';
@@ -275,7 +275,17 @@ export class ModelService {
   }
 
   get isConfigured(): boolean {
-    return Boolean(this.cfg.model.apiKey && this.cfg.model.baseUrl && this.cfg.model.name);
+    return this.isUsable(this.cfg.model);
+  }
+
+  private isUsable(m: ModelConfig): boolean {
+    return Boolean(m.apiKey && m.baseUrl && m.name);
+  }
+
+  /** 模型方案：default 是 MODEL_* 环境变量，其余在 MODEL_PROFILES 里覆盖部分字段；未知方案退回 default */
+  modelFor(profile = 'default'): ModelConfig {
+    const p = profile !== 'default' && Object.hasOwn(this.cfg.modelProfiles, profile) ? this.cfg.modelProfiles[profile] : undefined;
+    return p ? { ...this.cfg.model, ...p } : this.cfg.model;
   }
 
   async grade(
@@ -284,8 +294,10 @@ export class ModelService {
     sha256: string,
     recordId: number,
     examples: GoldExample[] = [],
+    profile = 'default',
   ): Promise<ModelVerdict> {
-    if (!this.isConfigured) return this.mock(task, sha256);
+    const m = this.modelFor(profile);
+    if (!this.isUsable(m)) return this.mock(task, sha256);
 
     const started = Date.now();
     const goldExamples = examples.map((e) => ({ recordId: e.recordId, score: e.score }));
@@ -303,7 +315,7 @@ export class ModelService {
         try {
           const r = await this.withRetry('识别答卷', () => {
             attempts += 1;
-            return this.requestCompletion(imageDataUrl, ocrPrompt);
+            return this.requestCompletion(m, imageDataUrl, ocrPrompt);
           });
           transcript = r.text.trim().slice(0, 4000);
           ocr = {
@@ -331,7 +343,7 @@ export class ModelService {
             ocrText: transcript || '（空白）',
             reasons: ['图片中没有可辨认的手写答案'],
             comment: '未识别到作答',
-            model: ocr.response?.model || this.cfg.model.name,
+            model: ocr.response?.model || m.name,
           };
           await this.trace.save({
             recordId,
@@ -340,6 +352,7 @@ export class ModelService {
             sha256,
             prompt: '',
             promptVersion: PROMPT_VERSION,
+        modelProfile: profile,
             goldExamples,
             attempts,
             latencyMs: Date.now() - started,
@@ -360,13 +373,13 @@ export class ModelService {
       stage = 'score';
       prompt = buildPrompt(task, examples, transcript || undefined);
       // 默认不再把图片发给评分阶段：学生作答只以转录文字为准，从机制上杜绝重新读图编造
-      const image = this.cfg.model.scoreWithImage ? imageDataUrl : undefined;
-      const sampleCount = this.cfg.model.sampleCount;
+      const image = m.scoreWithImage ? imageDataUrl : undefined;
+      const sampleCount = m.sampleCount;
       const results = await Promise.allSettled(
         Array.from({ length: sampleCount }, () =>
           this.withRetry('评分', () => {
             attempts += 1;
-            return this.requestVerdict(task, image, prompt, transcript || undefined);
+            return this.requestVerdict(m, task, image, prompt, transcript || undefined);
           }),
         ),
       );
@@ -400,6 +413,7 @@ export class ModelService {
         sha256,
         prompt,
         promptVersion: PROMPT_VERSION,
+        modelProfile: profile,
         goldExamples,
         attempts,
         latencyMs: Date.now() - started,
@@ -432,6 +446,7 @@ export class ModelService {
         sha256,
         prompt,
         promptVersion: PROMPT_VERSION,
+        modelProfile: profile,
         goldExamples,
         attempts,
         latencyMs: Date.now() - started,
@@ -460,14 +475,15 @@ export class ModelService {
   }
 
   private async requestVerdict(
+    m: ModelConfig,
     task: GradingTask,
     imageDataUrl: string | undefined,
     prompt: string,
     source?: string,
   ): Promise<{ verdict: ModelVerdict; response: TraceResponse }> {
-    const { text, response } = await this.requestCompletion(imageDataUrl, prompt);
+    const { text, response } = await this.requestCompletion(m, imageDataUrl, prompt);
     try {
-      return { verdict: parseVerdict(text, task, response.model || this.cfg.model.name, source), response };
+      return { verdict: parseVerdict(text, task, response.model || m.name, source), response };
     } catch (e) {
       if (e instanceof ModelOutputError) throw new ModelOutputError(e.message, response);
       throw e;
@@ -475,10 +491,11 @@ export class ModelService {
   }
 
   private async requestCompletion(
+    m: ModelConfig,
     imageDataUrl: string | undefined,
     prompt: string,
   ): Promise<{ text: string; response: TraceResponse }> {
-    const { baseUrl, apiKey, name, timeoutMs, temperature, maxTokens, reasoningEffort } = this.cfg.model;
+    const { baseUrl, apiKey, name, timeoutMs, temperature, maxTokens, reasoningEffort } = m;
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/chat/completions`, {

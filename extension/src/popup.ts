@@ -1,4 +1,4 @@
-import type { PublicUser, Settings } from './shared/protocol';
+import type { FlagsResult, PublicUser, Settings } from './shared/protocol';
 import { bg } from './shared/protocol';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -158,6 +158,21 @@ async function loadSettings() {
   if (__DEV__) $<HTMLInputElement>('server-url').value = s.serverUrl;
   $<HTMLInputElement>('min-conf').value = String(Math.round(s.autoMinConfidence * 100));
   $<HTMLInputElement>('interval').value = String(s.autoIntervalMs / 1000);
+  // 服务端开关：说明实际生效的下限，以及全自动是否被暂停（没登录时拿不到，不显示）
+  const hint = $('flags-hint');
+  try {
+    const r = await bg<FlagsResult>({ cmd: 'flags.get' });
+    const parts: string[] = [];
+    if (r.stale) { hint.hidden = true; return; } // 没登录或连不上：不确定，不提示
+    if (!r.flags.auto_mode) parts.push('全自动阅卷已被管理员暂停');
+    if (r.flags.auto_min_confidence > s.autoMinConfidence) {
+      parts.push(`服务端要求置信度至少 ${Math.round(r.flags.auto_min_confidence * 100)}%，实际按 ${Math.round(r.flags.auto_min_confidence * 100)}% 执行`);
+    }
+    hint.textContent = parts.join('；');
+    hint.hidden = parts.length === 0;
+  } catch {
+    hint.hidden = true;
+  }
 }
 
 async function saveSettings() {

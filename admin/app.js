@@ -528,7 +528,7 @@ function recordsPage(params) {
         },
       },
       { title: '置信度', render: (r) => (r.confidence === null ? '—' : `${Math.round(r.confidence * 100)}%`) },
-      { title: '模型', render: (r) => r.model || '—' },
+      { title: '模型', render: (r) => (r.modelProfile && r.modelProfile !== 'default' ? `${r.model || '—'}（${r.modelProfile}）` : r.model || '—') },
       { title: '耗时', render: (r) => `${(r.latencyMs / 1000).toFixed(1)}s` },
       { title: '错误', render: (r) => r.error || '', wrap: true },
     ],
@@ -725,9 +725,123 @@ function unitsPage() {
   });
 }
 
+// ---------- 功能开关 ----------
+
+const SCOPE_LABEL = { global: '全局', rollout: '按比例', unit: '单位', user: '用户' };
+const fmtFlag = (v) => (typeof v === 'boolean' ? (v ? '开' : '关') : v === '' ? '（空）' : String(v));
+const fmtSnap = (s) => (s ? `${fmtFlag(s.value)}${s.percent !== null && s.percent !== undefined ? `（${s.percent}%）` : ''}` : '无');
+
+/** 新增/修改一条覆盖。o 为已有覆盖（修改时）或 null */
+async function flagDialog(flag, o, profiles, refresh) {
+  const units = await api('GET', '/api/admin/units');
+  const valueField = flag.type === 'boolean'
+    ? { name: 'value', label: '取值', type: 'select', options: [['true', '开'], ['false', '关']], value: String(o ? o.value : !flag.default) }
+    : flag.key === 'model_profile'
+      ? { name: 'value', label: '取值', type: 'select', options: profiles.map((p) => [p, p]), value: o ? o.value : flag.default }
+      : { name: 'value', label: '取值', type: flag.type === 'number' ? 'number' : 'text', step: 'any', value: o ? o.value : flag.default, placeholder: flag.key === 'min_extension_version' ? '如 0.2.0，留空表示不限制' : '' };
+  const fields = o
+    ? [valueField]
+    : [
+        { name: 'scope', label: '范围', type: 'select', options: [['unit', '某个单位'], ['user', '某个用户'], ['rollout', '按比例放量'], ['global', '全局（替代默认值）']] },
+        { name: 'unitId', label: '单位（范围为单位时）', type: 'select', options: units.length ? units.map((u) => [String(u.id), u.name]) : [['', '（还没有单位）']] },
+        { name: 'username', label: '用户名（范围为用户时）', placeholder: '准确的用户名' },
+        valueField,
+      ];
+  if (o ? o.scope === 'rollout' : true) {
+    fields.push({ name: 'percent', label: '放量比例 %（范围为按比例时）', type: 'number', min: 0, max: 100, step: 1, value: o?.percent ?? 10, hint: '按用户 id 稳定分桶：调大比例时，已经拿到新值的用户不会变回去' });
+  }
+  openDialog({
+    title: o ? `修改 ${flag.key}：${SCOPE_LABEL[o.scope]}${o.targetName ? ` ${o.targetName}` : ''}` : `新增覆盖：${flag.key}`,
+    submitText: '保存',
+    onSubmit: async (v) => {
+      const scope = o ? o.scope : v.scope;
+      let targetId = o ? o.targetId : undefined;
+      if (!o && scope === 'unit') {
+        if (!v.unitId) throw new Error('请先创建管理单元');
+        targetId = Number(v.unitId);
+      }
+      if (!o && scope === 'user') {
+        const name = v.username.trim();
+        if (!name) throw new Error('请输入用户名');
+        const r = await api('GET', `/api/admin/users?${qs({ q: name, pageSize: 100 })}`);
+        const u = r.items.find((x) => x.username === name);
+        if (!u) throw new Error(`找不到用户 ${name}`);
+        targetId = u.id;
+      }
+      const value = flag.type === 'boolean' ? v.value === 'true' : flag.type === 'number' ? Number(v.value) : v.value.trim();
+      if (flag.type === 'number' && (v.value === '' || !Number.isFinite(value))) throw new Error('请输入数字');
+      const body = { scope, value, ...(targetId ? { targetId } : {}), ...(scope === 'rollout' ? { percent: Number(v.percent) } : {}) };
+      await api('PUT', `/api/admin/flags/${flag.key}`, body);
+      toast('已保存，扩展最晚 5 分钟内生效');
+      refresh();
+    },
+  });
+}
+
+function flagsPage() {
+  const list = h('div', {}, h('div', { class: 'empty' }, '加载中…'));
+  const audit = h('div', { class: 'card', style: 'padding:0;overflow:hidden' });
+
+  async function refresh() {
+    try {
+      const r = await api('GET', '/api/admin/flags');
+      list.replaceChildren(...r.flags.map((f) => {
+        const rows = f.overrides.map((o) => h('tr', {},
+          h('td', {}, SCOPE_LABEL[o.scope]),
+          h('td', {}, o.scope === 'rollout' ? `${o.percent}% 的用户` : o.targetName || '所有人'),
+          h('td', {}, fmtFlag(o.value), o.valid ? null : tag('已失效', 'bad')),
+          h('td', {}, fmtTime(o.updatedAt)),
+          h('td', {}, actions(
+            linkBtn('修改', () => flagDialog(f, o, r.modelProfiles, refresh).catch((e) => toast(e.message, true))),
+            linkBtn('删除', () => confirmDialog('删除覆盖', `删除后这部分用户回到下一级的取值。确定删除 ${f.key} 的「${SCOPE_LABEL[o.scope]}${o.targetName ? ` ${o.targetName}` : ''}」覆盖？`, async () => {
+              await api('DELETE', `/api/admin/flags/${f.key}?${qs({ scope: o.scope, targetId: o.targetId || '' })}`);
+              toast('已删除');
+              refresh();
+            }), 'danger'),
+          )),
+        ));
+        return h('div', { class: 'card', style: 'margin-bottom:12px' },
+          h('div', { class: 'toolbar' },
+            h('b', {}, f.key), tag(f.type), f.client ? tag('下发扩展') : tag('仅服务端'),
+            h('span', { class: 'spacer' }),
+            h('button', { onclick: () => flagDialog(f, null, r.modelProfiles, refresh).catch((e) => toast(e.message, true)) }, '新增覆盖'),
+          ),
+          h('p', {}, f.description),
+          h('p', { class: 'muted' }, `默认值：${fmtFlag(f.default)} · 负责人：${f.owner} · 计划删除：${f.removeBy === 'permanent' ? '长期保留' : f.removeBy}`),
+          rows.length
+            ? h('div', { class: 'table-wrap' }, h('table', {},
+                h('thead', {}, h('tr', {}, ...['范围', '对象', '取值', '更新时间', '操作'].map((t) => h('th', { scope: 'col' }, t)))),
+                h('tbody', {}, ...rows)))
+            : h('p', { class: 'muted' }, '没有覆盖，所有人使用默认值'),
+        );
+      }));
+      const a = await api('GET', '/api/admin/flags-audit?pageSize=30');
+      audit.replaceChildren(a.items.length
+        ? h('div', { class: 'table-wrap' }, h('table', {},
+            h('thead', {}, h('tr', {}, ...['时间', '操作人', '开关', '范围', '修改前', '修改后'].map((t) => h('th', { scope: 'col' }, t)))),
+            h('tbody', {}, ...a.items.map((x) => h('tr', {},
+              h('td', {}, fmtTime(x.createdAt)), h('td', {}, x.actorName), h('td', {}, x.flagKey),
+              h('td', {}, `${SCOPE_LABEL[x.scope]}${x.targetId ? ` #${x.targetId}` : ''}`),
+              h('td', {}, fmtSnap(x.before)), h('td', {}, fmtSnap(x.after)),
+            )))))
+        : h('div', { class: 'empty' }, '还没有修改记录'));
+    } catch (e) {
+      list.replaceChildren(h('div', { class: 'empty error' }, e.message));
+    }
+  }
+  refresh();
+  return h('div', {},
+    h('h1', {}, '功能开关'),
+    h('p', { class: 'muted' }, '取值优先级：用户 > 单位 > 按比例 > 全局 > 默认值。用户在多个单位时取加入最早的、设置了覆盖的单位。开关在代码里定义，这里只能改取值。'),
+    list,
+    h('h2', {}, '最近修改'),
+    audit,
+  );
+}
+
 // ---------- 路由 ----------
 
-const ROUTES = { dashboard: dashboardPage, users: usersPage, codes: codesPage, invites: invitesPage, records: recordsPage, presets: presetsPage, units: unitsPage, ledger: ledgerPage };
+const ROUTES = { dashboard: dashboardPage, users: usersPage, codes: codesPage, invites: invitesPage, records: recordsPage, presets: presetsPage, units: unitsPage, ledger: ledgerPage, flags: flagsPage };
 
 function route() {
   if (!me) return;

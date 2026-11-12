@@ -24,6 +24,45 @@ export const DEFAULT_SETTINGS: Settings = {
   autoIntervalMs: 2500,
 };
 
+/**
+ * 服务端下发的功能开关（GET /api/flags）。由管理员按单位/用户/比例控制，扩展只读。
+ * 新增开关时扩展要能处理缺失的字段（旧服务端不会返回）。
+ */
+export interface ClientFlags {
+  /** 全自动是否可用（紧急关闭开关） */
+  auto_mode: boolean;
+  /** 全自动置信度下限；老师自己的设置只能更严 */
+  auto_min_confidence: number;
+  /** 最低支持的扩展版本，空表示不限制 */
+  min_extension_version: string;
+}
+
+/** 从来没拉到过开关时的保守取值：全自动不可用 */
+export const SAFE_FLAGS: ClientFlags = {
+  auto_mode: false,
+  auto_min_confidence: 0.7,
+  min_extension_version: '',
+};
+
+export interface FlagsResult {
+  flags: ClientFlags;
+  /** 这次没能从服务端刷新，用的是缓存或保守取值 */
+  stale: boolean;
+  /** 当前扩展版本 */
+  version: string;
+}
+
+/** 比较点分版本号，缺省段按 0；a<b 返回负数 */
+export function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map((x) => Number(x) || 0);
+  const pb = b.split('.').map((x) => Number(x) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
 /** 对齐咖喱阅卷 taskInfo.exam */
 export interface ExamInfo {
   exam: string;
@@ -108,6 +147,7 @@ export type BgRequest =
   | { cmd: 'settings.get' }
   | { cmd: 'settings.set'; settings: Partial<Settings> }
   | { cmd: 'meta.get' }
+  | { cmd: 'flags.get'; refresh?: boolean }
   | { cmd: 'adapter.resolve'; host: string; path: string }
   | { cmd: 'adapter.save'; name: string; hostPattern: string; pathPattern: string; config: AdapterConfig }
   | { cmd: 'task.lookup'; platformHost: string; exam: string; q_index: string }
@@ -125,9 +165,16 @@ export type BgResponse<T = unknown> = { ok: true; data: T } | { ok: false; error
 /** popup -> 内容脚本 */
 export type TabRequest = { cmd: 'panel.toggle' } | { cmd: 'panel.status' };
 
+/** background 转发的服务端错误；status 是 HTTP 状态码（0 表示连不上服务端） */
+export class BgError extends Error {
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
+
 export async function bg<T>(req: BgRequest): Promise<T> {
   const res = (await chrome.runtime.sendMessage(req)) as BgResponse<T> | undefined;
   if (!res) throw new Error('扩展后台没有响应，请刷新页面重试');
-  if (!res.ok) throw new Error(res.error);
+  if (!res.ok) throw new BgError(res.error, res.status);
   return res.data;
 }

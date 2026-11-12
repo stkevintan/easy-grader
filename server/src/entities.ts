@@ -155,6 +155,8 @@ export class JudgeRecord {
   @Column({ type: 'boolean', default: false }) autoSubmitted!: boolean;
   @Column({ type: 'boolean', default: false }) charged!: boolean;
   @Column({ type: 'varchar', default: '' }) model!: string;
+  /** 评分时用的模型方案（功能开关 model_profile），用于比较不同方案的效果 */
+  @Column({ type: 'varchar', default: 'default' }) modelProfile!: string;
   @Column({ type: 'integer', default: 0 }) latencyMs!: number;
   @Column({ type: 'text', default: '' }) error!: string;
   @CreateDateColumn() createdAt!: Date;
@@ -182,6 +184,48 @@ export class AdapterPreset {
   @UpdateDateColumn() updatedAt!: Date;
 }
 
+/**
+ * 功能开关的取值覆盖。开关本身在代码里定义（flags/flag-definitions.ts），这里只存改过的值。
+ *   global  全局取值，替代代码里的默认值（targetId=0）
+ *   rollout 百分比放量：按 key+userId 哈希落在 percent 以内的用户取 value（targetId=0）
+ *   unit    某个管理单元（targetId=unitId）
+ *   user    某个用户（targetId=userId）
+ * 取值优先级：user > unit > rollout > global > 代码默认值
+ */
+export type FlagScope = 'global' | 'rollout' | 'unit' | 'user';
+export type FlagSnapshot = { value: boolean | number | string; percent: number | null };
+
+@Entity('feature_flag_overrides')
+@Index(['flagKey', 'scope', 'targetId'], { unique: true })
+export class FeatureFlagOverride {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column({ type: 'varchar', length: 64 }) flagKey!: string;
+  @Column({ type: 'varchar' }) scope!: FlagScope;
+  /** unit / user 时是对应 id；global / rollout 为 0（SQLite 唯一索引里 NULL 互不相等，所以不用 NULL） */
+  @Column({ type: 'integer', default: 0 }) targetId!: number;
+  @Column({ type: 'simple-json' }) value!: boolean | number | string;
+  /** 仅 rollout：0-100 */
+  @Column({ type: 'integer', nullable: true }) percent!: number | null;
+  @Column({ type: 'integer', nullable: true }) updatedBy!: number | null;
+  @UpdateDateColumn() updatedAt!: Date;
+}
+
+/** 功能开关修改记录：谁、什么时候、从什么值改成什么值 */
+@Entity('feature_flag_audit')
+@Index(['flagKey', 'createdAt'])
+export class FeatureFlagAudit {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column({ type: 'varchar', length: 64 }) flagKey!: string;
+  @Column({ type: 'varchar' }) scope!: FlagScope;
+  @Column({ type: 'integer', default: 0 }) targetId!: number;
+  /** 修改前后的取值；null 表示没有覆盖 */
+  @Column({ type: 'simple-json', nullable: true }) before!: FlagSnapshot | null;
+  @Column({ type: 'simple-json', nullable: true }) after!: FlagSnapshot | null;
+  @Column({ type: 'integer' }) actorId!: number;
+  @Column({ type: 'varchar', default: '' }) actorName!: string;
+  @CreateDateColumn() createdAt!: Date;
+}
+
 export const ENTITIES = [
   User,
   CreditLedger,
@@ -193,4 +237,6 @@ export const ENTITIES = [
   AdapterPreset,
   ManagementUnit,
   UnitMembership,
+  FeatureFlagOverride,
+  FeatureFlagAudit,
 ];

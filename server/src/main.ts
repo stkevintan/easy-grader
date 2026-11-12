@@ -22,7 +22,7 @@ export function configureApp(app: INestApplication, cfg: AppConfig) {
   ex.enableCors({
     origin: (origin, cb) => cb(null, isAllowedOrigin(origin, cfg.corsOrigins)),
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['content-type', 'authorization'],
+    allowedHeaders: ['content-type', 'authorization', 'x-eg-version'],
     maxAge: 600,
   });
   ex.useGlobalPipes(

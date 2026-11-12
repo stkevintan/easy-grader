@@ -4,7 +4,7 @@
  */
 import { h } from 'preact';
 import { cancelAutoConfirm, confirmAuto, isAuto, setMode } from '../controller';
-import { autoConfirmPending, mode, settings } from '../store';
+import { autoConfirmPending, effectiveMinConfidence, flags, mode, settings } from '../store';
 import type { Mode } from '../store';
 
 const LABELS: { mode: Mode; label: string }[] = [
@@ -23,6 +23,8 @@ export function ModeBar() {
   const m = mode.value;
   const running = isAuto.value;
   const s = settings.value;
+  // 管理员关掉全自动时按钮置灰；正在全自动时仍可点别的模式退出
+  const autoOff = !flags.value.auto_mode;
   return (
     <div class="mode">
       <div class="seg" role="group" aria-label="阅卷模式">
@@ -31,6 +33,8 @@ export function ModeBar() {
             key={x.mode}
             class={`seg-btn${m === x.mode ? ' on' : ''}${x.mode === 'auto' ? ' risky' : ''}`}
             aria-pressed={m === x.mode}
+            disabled={x.mode === 'auto' && autoOff && m !== 'auto'}
+            title={x.mode === 'auto' && autoOff ? '全自动阅卷已被管理员暂停' : undefined}
             onClick={() => setMode(x.mode)}
           >{x.label}</button>
         ))}
@@ -40,7 +44,7 @@ export function ModeBar() {
         <div class="msg warn confirm">
           <b>开启全自动阅卷？</b>
           {'\n'}扩展会自动：读取答卷 → AI 评分 → 写入分数 → 提交 → 下一份。
-          {`\n· 置信度低于 ${Math.round(s.autoMinConfidence * 100)}% 时会暂停，等你确认`}
+          {`\n· 置信度低于 ${Math.round(effectiveMinConfidence.value * 100)}% 时会暂停，等你确认`}
           {`\n· 每份之间至少间隔 ${s.autoIntervalMs / 1000} 秒`}
           {'\n· 写分校验失败、换卷超时、额度不足都会自动停止'}
           {'\n请确认你有权在该平台使用自动化工具，并对最终分数负责。本页面之后再开启不再询问。'}
