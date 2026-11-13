@@ -240,7 +240,10 @@ pnpm test:e2e                  # 先构建，再用真实 Chromium 跑：注册 
 
 - 检查 release tag 对应代码的测试和构建；
 - 构建 `linux/amd64` Docker 镜像，同时推到 `stkevintan/easy-grader-server:<tag>`（Docker Hub）和 `ghcr.io/stkevintan/easy-grader-server:<tag>`；正式 release 另外更新两边的 `latest`，预发布 release 不更新 `latest`；
-- 构建生产版扩展，并将相同内容分别打包为 Chrome / Edge zip，上传到该 GitHub Release。
+- 构建生产版扩展，并将相同内容分别打包为 Chrome / Edge zip，上传到该 GitHub Release；
+- 正式 release 另外把扩展包提交到 Chrome 应用商店和 Edge Add-ons 审核（预发布不提交，避免占掉商店版本号）。商店仍要审核，这一步只是提交。
+
+Chrome 商店用仓库的 Actions secret `CWS_CLIENT_ID`、`CWS_CLIENT_SECRET` 和 `CWS_REFRESH_TOKEN`（Google Cloud 的 OAuth client 和 refresh token）登录。Edge 商店用 `EDGE_CLIENT_ID` 和 `EDGE_API_KEY`（Partner Center「帐户设置 → 发布 API」里生成的凭据）登录。凭证不进代码，缺了这些 secret 商店提交会失败。
 
 GHCR 用 workflow 自带的 `GITHUB_TOKEN` 登录。Docker Hub 用仓库的 Actions secret `DOCKERHUB_USERNAME` 和 `DOCKERHUB_TOKEN`（Docker Hub 的 Read & Write access token）登录，token 不进代码，缺了这两个 secret 镜像 job 会失败。镜像带 `org.opencontainers.image.source` 标签，package 会自动关联到本仓库。
 

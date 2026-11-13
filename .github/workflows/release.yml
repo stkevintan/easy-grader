@@ -146,3 +146,49 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "${{ github.event.release.tag_name }}" release/*.zip --clobber
+
+  # 预发布不推商店：商店版本号只能递增，推了就占掉这个版本。
+  publish-chrome:
+    name: Publish Chrome extension
+    needs: publish-extensions
+    if: ${{ github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download Chrome package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ github.event.release.tag_name }}" --pattern 'easy-grader-chrome-*.zip' --repo "${{ github.repository }}"
+
+      # Chrome Web Store API v2。publisher-id 在开发者后台「发布者 → 设置」里。
+      # 商店仍要审核，这一步只是提交。
+      - name: Upload and submit to Chrome Web Store
+        uses: mnao305/chrome-extension-upload@v7.0.0
+        with:
+          file-path: easy-grader-chrome-${{ github.event.release.tag_name }}.zip
+          extension-id: annkpihggkmcjmpjkinaanccbdmncehk
+          publisher-id: 15bcf2b9-f66d-4cbe-8640-57394309e254
+          client-id: ${{ secrets.CWS_CLIENT_ID }}
+          client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
+          refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
+
+  publish-edge:
+    name: Publish Edge extension
+    needs: publish-extensions
+    if: ${{ github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download Edge package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ github.event.release.tag_name }}" --pattern 'easy-grader-edge-*.zip' --repo "${{ github.repository }}"
+
+      # Partner Center 发布 API。商店仍要认证，这一步只是提交。
+      - name: Upload and submit to Edge Add-ons
+        uses: wdzeng/edge-addon@v2.1.1
+        with:
+          product-id: 8cdd982e-7097-414e-b9f7-a6c9f45ec781
+          zip-path: easy-grader-edge-${{ github.event.release.tag_name }}.zip
+          client-id: ${{ secrets.EDGE_CLIENT_ID }}
+          api-key: ${{ secrets.EDGE_API_KEY }}
