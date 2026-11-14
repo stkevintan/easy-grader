@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Easy Grader 阅卷助手",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "在网页阅卷平台上读取答卷、请求 AI 建议分并辅助给分。默认人工确认，自动连续阅卷需手动开启。",
   "minimum_chrome_version": "110",
   "permissions": ["storage", "activeTab", "scripting", "tabs"],
