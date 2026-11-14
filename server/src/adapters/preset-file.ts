@@ -21,9 +21,12 @@ export const DEFAULT_PRESETS_DIR = resolve(__dirname, '..', '..', 'presets');
  */
 export function parsePresetFile(text: string, source: string): BuiltinPreset[] {
   const doc = parse(text) as unknown;
+  // 空文件（只有注释）视为没有预设；其余必须是带 presets 数组的对象，拼错的键或裸列表直接报错
   if (doc == null) return [];
-  const list = (doc as { presets?: unknown }).presets;
-  if (list == null) return [];
+  if (typeof doc !== 'object' || Array.isArray(doc) || !('presets' in doc)) {
+    throw new Error(`${source}：顶层必须是带 presets 字段的对象`);
+  }
+  const list = (doc as { presets: unknown }).presets;
   if (!Array.isArray(list)) throw new Error(`${source}：presets 必须是数组`);
   return list.map((raw, i) => {
     const at = `${source} 第 ${i + 1} 条`;

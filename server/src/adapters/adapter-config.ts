@@ -80,9 +80,9 @@ export function validateAdapterConfig(v: unknown): string | null {
   if (!textSource(c.examTitle)) return 'examTitle 不合法';
   if (!textSource(c.questionNo)) return 'questionNo 不合法';
   if (c.maxScore !== undefined && !textSource(c.maxScore)) return 'maxScore 不合法';
-  if (typeof c.nextTimeoutMs !== 'number' || c.nextTimeoutMs < 500 || c.nextTimeoutMs > 60000)
+  if (!Number.isFinite(c.nextTimeoutMs) || c.nextTimeoutMs < 500 || c.nextTimeoutMs > 60000)
     return 'nextTimeoutMs 需在 500-60000 之间';
-  if (typeof c.submitDelayMs !== 'number' || c.submitDelayMs < 0 || c.submitDelayMs > 10000)
+  if (!Number.isFinite(c.submitDelayMs) || c.submitDelayMs < 0 || c.submitDelayMs > 10000)
     return 'submitDelayMs 需在 0-10000 之间';
   if (JSON.stringify(c).length > 20000) return 'config 过大';
   return null;
