@@ -37,6 +37,7 @@ describe('预设 YAML 文件', () => {
     expect(() => parsePresetFile(`presets:\n  - name: x\n    hostPattern: 'a b'${config}`, 'bad.yaml')).toThrow(/hostPattern 不合法/);
     expect(() => parsePresetFile('presets: {}', 'bad.yaml')).toThrow(/presets 必须是数组/);
     expect(() => parsePresetFile('presets:', 'bad.yaml')).toThrow(/presets 必须是数组/);
+    expect(() => parsePresetFile('presets: [', 'broken.yaml')).toThrow(/^broken\.yaml：YAML 解析失败：/);
     expect(() => parsePresetFile('preset: []', 'bad.yaml')).toThrow(/顶层必须是带 presets 字段的对象/);
     expect(() => parsePresetFile('- name: x', 'bad.yaml')).toThrow(/顶层必须是带 presets 字段的对象/);
     expect(() => parsePresetFile(`presets:\n  - name: x\n    hostPattern: a.com${config.replace('8000', '.nan')}`, 'bad.yaml')).toThrow(

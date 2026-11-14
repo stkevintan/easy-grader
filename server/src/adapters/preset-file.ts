@@ -20,7 +20,13 @@ export const DEFAULT_PRESETS_DIR = resolve(__dirname, '..', '..', 'presets');
  * 任何一条不合法都抛错，避免带着坏配置上线。
  */
 export function parsePresetFile(text: string, source: string): BuiltinPreset[] {
-  const doc = parse(text) as unknown;
+  let doc: unknown;
+  try {
+    doc = parse(text);
+  } catch (e) {
+    // 语法错误本身只带行列号，补上文件名才能在多个文件里定位
+    throw new Error(`${source}：YAML 解析失败：${e instanceof Error ? e.message : String(e)}`, { cause: e });
+  }
   // 空文件（只有注释）视为没有预设；其余必须是带 presets 数组的对象，拼错的键或裸列表直接报错
   if (doc == null) return [];
   if (typeof doc !== 'object' || Array.isArray(doc) || !('presets' in doc)) {
