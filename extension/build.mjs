@@ -55,10 +55,12 @@ const manifest = JSON.parse(readFileSync(resolve(root, 'manifest.json'), 'utf8')
 if (dev) {
   manifest.name += '（开发版）';
 } else {
-  manifest.host_permissions = [`${serverUrl}/*`, 'https://xiaoxianai.cn/*', 'https://www.xiaoxianai.cn/*'];
+  // *.xiaoxianai.cn 同时匹配主域和所有子域（ls.xiaoxianai.cn 等），与 popup.ts 的 AUTO_ENABLED_DOMAINS 保持一致
+  const builtInSites = ['https://*.xiaoxianai.cn/*'];
+  manifest.host_permissions = [`${serverUrl}/*`, ...builtInSites];
   manifest.content_scripts = [
-    { matches: ['https://xiaoxianai.cn/*', 'https://www.xiaoxianai.cn/*'], js: ['content.js'], run_at: 'document_idle' },
-    { matches: ['https://xiaoxianai.cn/*', 'https://www.xiaoxianai.cn/*'], js: ['insert.js'], run_at: 'document_start', world: 'MAIN' },
+    { matches: builtInSites, js: ['content.js'], run_at: 'document_idle' },
+    { matches: builtInSites, js: ['insert.js'], run_at: 'document_start', world: 'MAIN' },
   ];
 }
 writeFileSync(resolve(dist, 'manifest.json'), JSON.stringify(manifest, null, 2) + '\n');
