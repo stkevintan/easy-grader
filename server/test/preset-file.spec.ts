@@ -59,6 +59,11 @@ describe('预设 YAML 文件', () => {
     const xx = list.find((p) => p.name === '小闲阅卷');
     expect(xx).toMatchObject({ hostPattern: 'xiaoxianai.cn', pathPattern: '/webPaper' });
     expect(hostMatches('ls.xiaoxianai.cn', xx!.hostPattern)).toBe(true);
-    expect(xx!.config.pics).toEqual({ selectors: ['canvas'], type: 'canvas', multiple: false });
+    expect(xx!.config.pics).toEqual({ selectors: ['#canvas canvas', 'canvas'], type: 'canvas', multiple: false });
+    expect(xx!.config.maxScore).toMatchObject({ selectors: ['#dragDiv'] });
+    // 题号和满分都从「3.4（6分）(可拖动)」里取
+    const title = '3.4（6分）(可拖动)';
+    expect(title.match(new RegExp(xx!.config.questionNo.regex!))?.[1]).toBe('3.4');
+    expect(title.match(new RegExp(xx!.config.maxScore!.regex!))?.[1]).toBe('6');
   });
 });

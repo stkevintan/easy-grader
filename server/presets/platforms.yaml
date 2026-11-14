@@ -32,18 +32,26 @@ presets:
   - name: 小闲阅卷
     hostPattern: xiaoxianai.cn
     pathPattern: /webPaper
-    note: 小闲阅卷 https://ls.xiaoxianai.cn/webPaper，在真实页面上点选适配后导出
+    note: 小闲阅卷 https://ls.xiaoxianai.cn/webPaper，按 2026-11-09 的页面快照整理
+    # 页面是 React + CSS Modules，类名带构建哈希（styles__submit___2KNyb），小闲重新发版就会变。
+    # 所以优先用 id 和 [class*="styles__xxx___"] 前缀匹配，带哈希的完整类名只作最后的备选。
+    # 每组选择器按顺序尝试，取第一个命中的。
     config:
       version: 1
-      pics: { selectors: ['canvas'], type: canvas, multiple: false }
+      pics: { selectors: ['#canvas canvas', 'canvas'], type: canvas, multiple: false }
       scoreMode: input
-      scoreInput: { selectors: ['input[type="text"]'] }
+      scoreInput:
+        selectors: ['#oneProblemInput input[type="text"]', '[class*="styles__scoreInput___"]', 'input[type="text"]']
       scoreButtons: { selectors: [], clickType: click }
-      # 类名带构建哈希（CSS Modules），小闲重新发版后可能会变
-      submit: { selectors: ['div.styles__submit___2KNyb'], clickType: click }
+      submit:
+        selectors: ['#submitDiv > div:first-child', '[class*="styles__submit___"]', 'div.styles__submit___2KNyb']
+        clickType: click
       confirm: { selectors: [] }
-      examTitle: { selectors: ['div:nth-of-type(2) > div > div > div:nth-of-type(5) > span:nth-of-type(1)'] }
+      # 页脚第一个 span，文字如「苏大附中高一 (语文)」
+      examTitle:
+        selectors: ['[class*="styles__footer___"] > span[title*="试卷名"]', '[class*="styles__footer___"] > span:first-child']
+      # 题号和满分都从「3.4（6分）(可拖动)」里取
       questionNo: { selectors: ['#dragDiv'], regex: '(\d+(?:\.\d+)?)' }
-      maxScore: { selectors: ['#zero button:nth-of-type(1)'], regex: '(\d+(?:\.\d+)?)' }
+      maxScore: { selectors: ['#dragDiv'], regex: '[（(]\s*(\d+(?:\.\d+)?)\s*分' }
       nextTimeoutMs: 8000
       submitDelayMs: 300
