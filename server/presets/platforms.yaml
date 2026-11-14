@@ -28,4 +28,22 @@
 #       nextTimeoutMs: 8000
 #       submitDelayMs: 300
 
-presets: []
+presets:
+  - name: 小闲阅卷
+    hostPattern: xiaoxianai.cn
+    pathPattern: /webPaper
+    note: 小闲阅卷 https://ls.xiaoxianai.cn/webPaper，在真实页面上点选适配后导出
+    config:
+      version: 1
+      pics: { selectors: ['canvas'], type: canvas, multiple: false }
+      scoreMode: input
+      scoreInput: { selectors: ['input[type="text"]'] }
+      scoreButtons: { selectors: [], clickType: click }
+      # 类名带构建哈希（CSS Modules），小闲重新发版后可能会变
+      submit: { selectors: ['div.styles__submit___2KNyb'], clickType: click }
+      confirm: { selectors: [] }
+      examTitle: { selectors: ['div:nth-of-type(2) > div > div > div:nth-of-type(5) > span:nth-of-type(1)'] }
+      questionNo: { selectors: ['#dragDiv'], regex: '(\d+(?:\.\d+)?)' }
+      maxScore: { selectors: ['#zero button:nth-of-type(1)'], regex: '(\d+(?:\.\d+)?)' }
+      nextTimeoutMs: 8000
+      submitDelayMs: 300

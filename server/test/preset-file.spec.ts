@@ -1,6 +1,7 @@
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { hostMatches } from '../src/adapters/adapter-config';
 import { DEFAULT_PRESETS_DIR, loadPresetDir, parsePresetFile } from '../src/adapters/preset-file';
 
 const config = `
@@ -53,6 +54,10 @@ describe('预设 YAML 文件', () => {
   });
 
   it('仓库自带的预设文件合法', () => {
-    expect(() => loadPresetDir(DEFAULT_PRESETS_DIR)).not.toThrow();
+    const list = loadPresetDir(DEFAULT_PRESETS_DIR);
+    const xx = list.find((p) => p.name === '小闲阅卷');
+    expect(xx).toMatchObject({ hostPattern: 'xiaoxianai.cn', pathPattern: '/webPaper' });
+    expect(hostMatches('ls.xiaoxianai.cn', xx!.hostPattern)).toBe(true);
+    expect(xx!.config.pics).toEqual({ selectors: ['canvas'], type: 'canvas', multiple: false });
   });
 });

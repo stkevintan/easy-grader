@@ -165,7 +165,7 @@ MODEL_NAME=qwen-vl-max
 
 ### xiaoxianai.cn
 
-发布版扩展自带 `*.xiaoxianai.cn`（主域和所有子域，例如阅卷页 `ls.xiaoxianai.cn`）的内容脚本，不用点「在此站点启用」。选择器由服务端的 `server/presets/platforms.yaml` 下发；在那里加上小闲的预设之前，需要按上面的步骤点选适配一次。如果答卷是画在 canvas 上的跨域图片，`insert.js` 会把 `drawImage` 的原始图片地址记在 canvas 的 `data-eg-src` 属性上（通常是平台的原图 PNG，比画到面板上的 canvas 分辨率高）。扩展会优先下载这张原图；单张图在尺寸和体积允许时直接原样上传，不再转 JPEG。这条路径已在端到端测试里验证过。适配成功后，建议管理员在后台把这份配置设为公共预设。
+发布版扩展自带 `*.xiaoxianai.cn`（主域和所有子域，例如阅卷页 `ls.xiaoxianai.cn`）的内容脚本，不用点「在此站点启用」。阅卷页 `/webPaper` 的选择器写在服务端的 `server/presets/platforms.yaml` 里，服务端启动时写成公共预设，所以也不用再点选适配。小闲改版后选择器失效时（例如提交按钮的类名带构建哈希），重新点选适配一次，再把新的配置更新到这个文件和后台。如果答卷是画在 canvas 上的跨域图片，`insert.js` 会把 `drawImage` 的原始图片地址记在 canvas 的 `data-eg-src` 属性上（通常是平台的原图 PNG，比画到面板上的 canvas 分辨率高）。扩展会优先下载这张原图；单张图在尺寸和体积允许时直接原样上传，不再转 JPEG。这条路径已在端到端测试里验证过。
 
 ## 评分 trace 与离线评测
 
