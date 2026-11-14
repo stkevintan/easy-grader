@@ -1,0 +1,57 @@
+# 平台适配预设：服务端启动时把这里的每一条写进 adapter_presets，作为公共预设。
+#
+# - 只在库里还没有同样 hostPattern + pathPattern 的公共预设时写入；
+#   管理员在后台改过或停用后，重启不会覆盖。要让新版本生效，先在后台删掉旧的那条。
+# - 任意一条不合法（缺字段、选择器格式不对）服务端会拒绝启动，避免带着坏配置上线。
+# - 目录可用环境变量 PRESETS_DIR 改到别处；目录下所有 .yaml/.yml 文件按文件名顺序读取。
+# - config 的字段见 server/src/adapters/adapter-config.ts（AdapterConfig）。
+#   选择器必须对着真实页面验证过；最简单的来源是在扩展里「点选适配」保存后，
+#   从后台「适配预设」把那份 config 复制过来。
+#
+# 格式：
+#
+# presets:
+#   - name: 示例平台
+#     hostPattern: example.com     # 会同时匹配子域名
+#     pathPattern: /mark           # 可选：URL 路径包含的片段
+#     note: 说明                   # 可选
+#     config:
+#       version: 1
+#       pics: { selectors: ['#answer img'], type: img, multiple: true }
+#       scoreMode: input
+#       scoreInput: { selectors: ['#score'] }
+#       scoreButtons: { selectors: [], clickType: click }
+#       submit: { selectors: ['#submit'], clickType: click }
+#       confirm: { selectors: [] }
+#       examTitle: { selectors: ['.exam-title'] }
+#       questionNo: { selectors: ['.question-no'] }
+#       nextTimeoutMs: 8000
+#       submitDelayMs: 300
+
+presets:
+  - name: 小闲阅卷
+    hostPattern: xiaoxianai.cn
+    pathPattern: /webPaper
+    note: 小闲阅卷 https://ls.xiaoxianai.cn/webPaper，按 2026-11-09 的页面快照整理
+    # 页面是 React + CSS Modules，类名带构建哈希（styles__submit___2KNyb），小闲重新发版就会变。
+    # 所以优先用 id 和 [class*="styles__xxx___"] 前缀匹配，带哈希的完整类名只作最后的备选。
+    # 每组选择器按顺序尝试，取第一个命中的。
+    config:
+      version: 1
+      pics: { selectors: ['#canvas canvas', 'canvas'], type: canvas, multiple: false }
+      scoreMode: input
+      scoreInput:
+        selectors: ['#oneProblemInput input[type="text"]', '[class*="styles__scoreInput___"]', 'input[type="text"]']
+      scoreButtons: { selectors: [], clickType: click }
+      submit:
+        selectors: ['#submitDiv > div:first-child', '[class*="styles__submit___"]', 'div.styles__submit___2KNyb']
+        clickType: click
+      confirm: { selectors: [] }
+      # 页脚第一个 span，文字如「苏大附中高一 (语文)」
+      examTitle:
+        selectors: ['[class*="styles__footer___"] > span[title*="试卷名"]', '[class*="styles__footer___"] > span:first-child']
+      # 题号和满分都从「3.4（6分）(可拖动)」里取
+      questionNo: { selectors: ['#dragDiv'], regex: '(\d+(?:\.\d+)?)' }
+      maxScore: { selectors: ['#dragDiv'], regex: '[（(]\s*(\d+(?:\.\d+)?)\s*分' }
+      nextTimeoutMs: 8000
+      submitDelayMs: 300

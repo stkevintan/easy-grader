@@ -5,6 +5,7 @@ import { APP_CONFIG, AppConfig } from '../config';
 import { AdapterPreset, PresetScope } from '../entities';
 import { AdapterConfig, hostMatches, normalizeHostPattern, validateAdapterConfig } from './adapter-config';
 import { BUILTIN_PRESETS } from './builtin-presets';
+import { DEFAULT_PRESETS_DIR, loadPresetDir } from './preset-file';
 
 export interface PresetInput {
   name: string;
@@ -23,9 +24,13 @@ export class AdaptersService implements OnApplicationBootstrap {
     @InjectRepository(AdapterPreset) private readonly presets: Repository<AdapterPreset>,
   ) {}
 
-  /** 内置预设只在不存在时写入，管理员修改后不会被覆盖 */
+  /**
+   * 内置预设（演示页 + server/presets/*.yaml 里的平台预设）只在不存在时写入，
+   * 管理员修改或停用后不会被覆盖。
+   */
   async onApplicationBootstrap() {
-    for (const p of BUILTIN_PRESETS) {
+    const fromFiles = loadPresetDir(this.cfg.presetsDir || DEFAULT_PRESETS_DIR);
+    for (const p of [...BUILTIN_PRESETS, ...fromFiles]) {
       if (p.demo && !this.cfg.seedDemoPreset) continue;
       const exists = await this.presets.existsBy({ hostPattern: p.hostPattern, pathPattern: p.pathPattern, scope: 'public' });
       if (exists) continue;

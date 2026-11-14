@@ -52,6 +52,8 @@ export interface AppConfig {
   };
   corsOrigins: string[];
   seedDemoPreset: boolean;
+  /** 平台预设 YAML 目录；为空则用 server/presets */
+  presetsDir: string;
   /** 管理后台 / 演示页静态文件目录；为空则在仓库根目录查找 */
   adminDir: string;
   demoDir: string;
@@ -184,6 +186,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       .map((s) => s.trim())
       .filter(Boolean),
     seedDemoPreset: bool(env.SEED_DEMO_PRESET, true),
+    presetsDir: env.PRESETS_DIR ? resolve(env.PRESETS_DIR) : '',
     adminDir: env.ADMIN_DIR ? resolve(env.ADMIN_DIR) : '',
     demoDir: env.DEMO_DIR ? resolve(env.DEMO_DIR) : '',
     serveDemo: bool(env.SERVE_DEMO, true),

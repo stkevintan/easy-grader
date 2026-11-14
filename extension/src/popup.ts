@@ -13,8 +13,16 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 let user: PublicUser | null = null;
 let tab: chrome.tabs.Tab | undefined;
 
-// These hosts ship with the extension and are injected without a per-site enable step.
-const AUTO_ENABLED_ORIGINS = new Set(['https://xiaoxianai.cn', 'https://www.xiaoxianai.cn']);
+// These domains (and all their subdomains) ship with the extension and are injected without a per-site enable step.
+// Keep in sync with the content_scripts matches in build.mjs.
+const AUTO_ENABLED_DOMAINS = ['xiaoxianai.cn'];
+
+const isAutoEnabled = (origin: string) => {
+  const u = new URL(origin);
+  if (u.protocol !== 'https:') return false;
+  const host = u.hostname.toLowerCase();
+  return AUTO_ENABLED_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`));
+};
 
 /** 当前标签页能否注入：只处理 http(s) 页面 */
 const tabOrigin = () => {
@@ -49,7 +57,7 @@ async function renderPage() {
   const sites = await bg<string[]>({ cmd: 'site.list' });
   // 开发版的 manifest 自带本机演示页的内容脚本，无需单独启用
   const builtIn = __DEV__ && /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
-  const autoEnabled = !__DEV__ && AUTO_ENABLED_ORIGINS.has(origin);
+  const autoEnabled = !__DEV__ && isAutoEnabled(origin);
   const enabled = builtIn || autoEnabled || sites.includes(origin);
   show('site-row', !enabled);
   $<HTMLButtonElement>('open-panel').textContent = enabled ? '打开 / 关闭阅卷面板' : '在本页临时打开面板';
