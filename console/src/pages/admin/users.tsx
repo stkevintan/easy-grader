@@ -117,6 +117,11 @@ export function AdminUsersPage() {
             const r = await api<{ balance: number }>('POST', `/api/admin/users/${modal.user.id}/credits`, { delta, note: v.note || undefined });
             setNotice(`已调整，${modal.user.username} 当前余额 ${r.balance}`);
             refresh();
+            // 给自己调额度时，侧栏余额和「额度」页的流水也要刷新
+            if (modal.user.id === me.data?.id) {
+              qc.invalidateQueries({ queryKey: ['me'] });
+              qc.invalidateQueries({ queryKey: ['ledger'] });
+            }
           }}
           onClose={close}
         />

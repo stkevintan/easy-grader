@@ -6,10 +6,24 @@ import { Card, Empty, ErrorText, Stat } from '../../ui';
 
 const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
+type Day = AdminStats['daily'][number];
+
+/** 服务端只返回有记录的日期（UTC）；补齐窗口内每一天，零评分日也占一根柱子 */
+export function fillDays(rows: Day[], days: number, now = Date.now()): Day[] {
+  const byDay = new Map(rows.map((d) => [d.day, d]));
+  const out: Day[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const day = new Date(now - i * 86400_000).toISOString().slice(0, 10);
+    out.push(byDay.get(day) ?? { day, done: 0, failed: 0, users: 0 });
+  }
+  return out;
+}
+
 export function AdminHomePage() {
   const stats = useQuery({ queryKey: ['admin-stats'], queryFn: () => api<AdminStats>('GET', '/api/admin/stats') });
   const s = stats.data;
   const confirmRate = s && s.records ? Math.round((s.confirmed / s.records) * 100) : 0;
+  const daily = s ? fillDays(s.daily, 14) : [];
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold">概览</h1>
@@ -27,7 +41,7 @@ export function AdminHomePage() {
       <Card title="近 14 天评分量">
         {s && s.daily.length > 0 ? (
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={s.daily}>
+            <BarChart data={daily}>
               <XAxis dataKey="day" tick={{ fontSize: 11 }} />
               <YAxis allowDecimals={false} width={30} />
               <Tooltip />

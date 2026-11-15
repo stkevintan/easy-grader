@@ -1,7 +1,7 @@
 // 端到端冒烟测试：真实 Chromium + 已构建的扩展 + 本地服务端 + 演示阅卷页。
 //
 //   pnpm --filter easy-grader-e2e exec playwright install chromium   # 首次
-//   pnpm test:e2e            # 在仓库根目录执行：先构建 server 和 extension，再跑本脚本
+//   pnpm test:e2e            # 在仓库根目录执行：先构建 server、extension 和 console，再跑本脚本
 //
 // 覆盖：popup 注册登录 → 打开面板 → 自动识别演示页预设 → 填写题目设置 →
 //       获取建议分（mock 模型）→ 写入并提交 → 页面切到下一份 → 服务端记录已确认；

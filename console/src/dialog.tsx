@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, ErrorText, Field, Input, TextArea } from './ui';
 
 export interface DialogField {
@@ -54,16 +54,33 @@ export function Dialog({
       setPending(false);
     }
   };
+  // 用原生 <dialog> 的 showModal：浏览器负责初始焦点、焦点约束、背景不可操作，关闭后把焦点还给打开前的元素
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    const prev = document.activeElement as HTMLElement | null;
+    if (d && !d.open) d.showModal?.();
+    return () => {
+      if (d?.open) d.close?.();
+      prev?.focus?.();
+    };
+  }, []);
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onClose}>
+    <dialog
+      ref={ref}
+      aria-label={title}
+      className="m-auto w-full max-w-lg rounded-lg bg-white p-0 shadow-xl backdrop:bg-black/40 dark:bg-slate-900 dark:text-slate-100"
+      // Escape 触发 cancel：交给上层关闭，避免浏览器先关掉 dialog 而 React 状态没变
+      onCancel={(e) => {
+        e.preventDefault();
+        onClose();
+      }}
+      // 点到 dialog 本身（即背景遮罩）时关闭
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
       <form
         id="dialog-form"
-        role="dialog"
-        aria-modal="true"
-        aria-label={title}
-        className="flex max-h-[85vh] w-full max-w-lg flex-col gap-3 overflow-auto rounded-lg bg-white p-5 shadow-xl dark:bg-slate-900"
-        onClick={(e) => e.stopPropagation()}
-        onKeyDown={(e) => e.key === 'Escape' && onClose()}
+        className="flex max-h-[85vh] flex-col gap-3 overflow-auto p-5"
         onSubmit={submit}
       >
         <h2 className="text-base font-semibold">{title}</h2>
@@ -77,7 +94,7 @@ export function Dialog({
           {onSubmit && <Button variant="primary" type="submit" disabled={pending}>{pending ? '请稍候…' : submitText}</Button>}
         </div>
       </form>
-    </div>
+    </dialog>
   );
 }
 
