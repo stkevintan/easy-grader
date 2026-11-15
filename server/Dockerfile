@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Easy Grader 服务端镜像。构建上下文必须是仓库根目录（需要 pnpm workspace、admin/、console/、demo/）：
+# Easy Grader 服务端镜像。构建上下文必须是仓库根目录（需要 pnpm workspace、console/、demo/）：
 #
 #   docker build -f server/Dockerfile -t ghcr.io/stkevintan/easy-grader-server:dev .
 #
@@ -40,7 +40,6 @@ ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000 \
     DB_PATH=/data/app.db \
-    ADMIN_DIR=/app/admin \
     CONSOLE_DIR=/app/console \
     DEMO_DIR=/app/demo \
     SERVE_DEMO=false \
@@ -48,7 +47,6 @@ ENV NODE_ENV=production \
 WORKDIR /app
 
 COPY --from=build --chown=node:node /out/ ./
-COPY --chown=node:node admin/ ./admin/
 COPY --from=build --chown=node:node /repo/console/dist/ ./console/
 COPY --chown=node:node demo/ ./demo/
 

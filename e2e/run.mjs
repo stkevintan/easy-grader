@@ -5,7 +5,7 @@
 //
 // 覆盖：popup 注册登录 → 打开面板 → 自动识别演示页预设 → 填写题目设置 →
 //       获取建议分（mock 模型）→ 写入并提交 → 页面切到下一份 → 服务端记录已确认；
-//       打分板页面同样走一遍；管理后台能登录并看到统计。
+//       打分板页面同样走一遍；控制台的系统管理能登录并看到统计。
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -171,31 +171,33 @@ async function main() {
     assert.equal(login.user.credits, 3);
     console.log('  2 条记录已确认，剩余 3 次');
 
-    step('管理后台：登录并查看概览');
+    step('控制台：管理员登录，查看系统管理概览');
     const admin = await ctx.newPage();
+    // 旧后台地址会跳到控制台
     await admin.goto(`${BASE}/admin/`);
-    await admin.fill('#login-user', 'admin');
-    await admin.fill('#login-pass', ADMIN_PASS);
-    await admin.click('#login-form button[type=submit]');
-    await admin.waitForSelector('.stat');
-    const stats = await admin.textContent('.grid');
-    assert.match(stats, /用户数/);
-    await admin.click('a[data-route=records]');
+    await admin.waitForURL(/\/console\/#\/(login|admin)/);
+    await admin.goto(`${BASE}/console/#/login`);
+    await admin.fill('input[name=username]', 'admin');
+    await admin.fill('input[name=password]', ADMIN_PASS);
+    await admin.click('form button[type=submit]');
+    await admin.locator('a[href="#/admin"]').click();
+    await admin.locator('main', { hasText: '用户数' }).waitFor();
+    await admin.click('a[href="#/admin/records"]');
     await admin.waitForSelector('table tbody tr');
     assert.equal(await admin.locator('table tbody tr').count(), 2);
-    await admin.click('a[data-route=codes]');
-    await admin.click('text=生成兑换码');
+    await admin.click('a[href="#/admin/codes"]');
+    await admin.click('button:has-text("生成兑换码")');
     await admin.fill('#f-count', '3');
     await admin.click('#dialog-form button[type=submit]');
     await admin.waitForSelector('#f-codes');
     const codes = (await admin.inputValue('#f-codes')).split('\n');
     assert.equal(codes.length, 3);
-    console.log('  管理后台通过，生成兑换码：', codes[0]);
+    await admin.click('#dialog-form button:has-text("关闭")');
+    console.log('  控制台系统管理通过，生成兑换码：', codes[0]);
 
-    step('管理后台：功能开关新增、修改、删除覆盖，留下修改记录');
-    await admin.keyboard.press('Escape');
-    await admin.click('a[data-route=flags]');
-    const conf = admin.locator('.card', { has: admin.locator('b', { hasText: /^auto_min_confidence$/ }) });
+    step('控制台：功能开关新增、修改、删除覆盖，留下修改记录');
+    await admin.click('a[href="#/admin/flags"]');
+    const conf = admin.locator('[data-flag=auto_min_confidence]');
     await conf.locator('button', { hasText: '新增覆盖' }).click();
     await admin.selectOption('#f-scope', 'global');
     await admin.fill('#f-value', '0.8');
@@ -205,14 +207,14 @@ async function main() {
     await conf.locator('button', { hasText: '修改' }).click();
     await admin.fill('#f-value', '0.9');
     await admin.click('#dialog-form button[type=submit]');
-    await admin.waitForFunction(() => /0\.9/.test(document.querySelector('main').textContent));
-    const flags = await (await fetch(`${BASE}/api/admin/flags`, { headers: { authorization: `Bearer ${await admin.evaluate(() => sessionStorage.getItem('eg-admin-token'))}` } })).json();
+    await conf.locator('tbody', { hasText: '0.9' }).waitFor();
+    const consoleToken = await admin.evaluate(() => sessionStorage.getItem('eg-console-token'));
+    const flags = await (await fetch(`${BASE}/api/admin/flags`, { headers: { authorization: `Bearer ${consoleToken}` } })).json();
     assert.deepEqual(flags.flags.find((f) => f.key === 'auto_min_confidence').overrides.map((o) => [o.scope, o.value]), [['global', 0.9]]);
     await conf.locator('button', { hasText: '删除' }).click();
     await admin.click('#dialog-form button[type=submit]');
     await conf.locator('text=没有覆盖，所有人使用默认值').waitFor();
-    const auditText = await admin.locator('main').textContent();
-    assert.match(auditText, /0\.8.*0\.9/s);
+    await admin.locator('main', { hasText: /0\.8[\s\S]*0\.9/ }).waitFor();
     console.log('  功能开关页通过');
 
     step('popup：兑换刚生成的码');

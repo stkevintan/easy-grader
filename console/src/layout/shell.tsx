@@ -1,10 +1,33 @@
 import { NavLink, Navigate, Outlet, useNavigate } from 'react-router';
-import { BookOpen, Coins, Home, KeyRound, ListChecks, LogOut, SlidersHorizontal, UserRound } from 'lucide-react';
+import {
+  BarChart3,
+  BookOpen,
+  Coins,
+  FileText,
+  Gift,
+  Home,
+  KeyRound,
+  ListChecks,
+  LogOut,
+  Mail,
+  ScrollText,
+  SlidersHorizontal,
+  ToggleLeft,
+  UserRound,
+  Users,
+} from 'lucide-react';
+import type { ComponentType } from 'react';
 import { useLogout, useMe } from '../api/auth';
 import { session } from '../api/client';
 import { cn } from '../ui';
 
-const NAV = [
+interface NavItem {
+  to: string;
+  label: string;
+  icon: ComponentType<{ size?: number }>;
+}
+
+const MINE: NavItem[] = [
   { to: '/', label: '首页', icon: Home },
   { to: '/tasks', label: '阅卷任务', icon: ListChecks },
   { to: '/records', label: '评分记录', icon: BookOpen },
@@ -13,35 +36,64 @@ const NAV = [
   { to: '/account', label: '账号', icon: KeyRound },
 ];
 
+const ADMIN: NavItem[] = [
+  { to: '/admin', label: '概览', icon: BarChart3 },
+  { to: '/admin/users', label: '用户', icon: Users },
+  { to: '/admin/codes', label: '兑换码', icon: Gift },
+  { to: '/admin/invites', label: '邀请令牌', icon: Mail },
+  { to: '/admin/records', label: '评分记录', icon: FileText },
+  { to: '/admin/presets', label: '适配预设', icon: SlidersHorizontal },
+  { to: '/admin/ledger', label: '额度流水', icon: ScrollText },
+  { to: '/admin/flags', label: '功能开关', icon: ToggleLeft },
+];
+
 export function RequireAuth() {
   if (!session.token()) return <Navigate to="/login" replace />;
   return <Outlet />;
+}
+
+export function RequireAdmin() {
+  const me = useMe();
+  if (me.isLoading) return null;
+  if (me.data?.role !== 'admin') return <Navigate to="/" replace />;
+  return <Outlet />;
+}
+
+function NavGroup({ title, items }: { title?: string; items: NavItem[] }) {
+  return (
+    <div className="mt-2">
+      {title && <div className="px-3 pb-1 pt-2 text-xs font-medium text-slate-400">{title}</div>}
+      {items.map(({ to, label, icon: Icon }) => (
+        <NavLink
+          key={to}
+          to={to}
+          end={to === '/' || to === '/admin'}
+          className={({ isActive }) =>
+            cn(
+              'flex items-center gap-2 rounded-md px-3 py-2 text-sm',
+              isActive ? 'bg-blue-50 font-medium text-brand dark:bg-slate-800' : 'hover:bg-slate-100 dark:hover:bg-slate-800',
+            )
+          }
+        >
+          <Icon size={16} /> {label}
+        </NavLink>
+      ))}
+    </div>
+  );
 }
 
 export function Shell() {
   const me = useMe();
   const logout = useLogout();
   const navigate = useNavigate();
+  const isAdmin = me.data?.role === 'admin';
   return (
     <div className="flex h-full bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-      <aside className="flex w-52 shrink-0 flex-col border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+      <aside className="flex w-52 shrink-0 flex-col overflow-auto border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="px-4 py-4 text-base font-semibold">Easy Grader</div>
-        <nav className="flex flex-col gap-0.5 px-2">
-          {NAV.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={to === '/'}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-2 rounded-md px-3 py-2 text-sm',
-                  isActive ? 'bg-blue-50 font-medium text-brand dark:bg-slate-800' : 'hover:bg-slate-100 dark:hover:bg-slate-800',
-                )
-              }
-            >
-              <Icon size={16} /> {label}
-            </NavLink>
-          ))}
+        <nav className="flex flex-col px-2">
+          <NavGroup items={MINE} />
+          {isAdmin && <NavGroup title="系统管理" items={ADMIN} />}
         </nav>
         <div className="mt-auto border-t border-slate-200 p-3 text-sm dark:border-slate-800">
           <div className="flex items-center gap-2">

@@ -10,8 +10,7 @@
 | --- | --- |
 | `server/` | NestJS + SQLite 服务端：账号、额度、兑换码、AI 评分、适配预设；同时托管管理后台和演示页 |
 | `extension/` | Chrome / Edge MV3 扩展（TypeScript + esbuild） |
-| `admin/` | 管理后台（原生 JS，无构建步骤，由服务端 `/admin/` 提供） |
-| `console/` | 新控制台（TypeScript + React + Tailwind，Vite 构建，由服务端 `/console/` 提供；设计见 [docs/console-design.md](docs/console-design.md)，P1 只有「我的」） |
+| `console/` | 控制台（TypeScript + React + Tailwind，Vite 构建，由服务端 `/console/` 提供）：老师的「我的」和管理员的「系统管理」；设计见 [docs/console-design.md](docs/console-design.md) |
 | `demo/` | 两个本地模拟阅卷页（输入框给分、打分板给分），用于没有真实平台账号时联调 |
 | `e2e/` | Playwright 端到端测试：真实 Chromium 加载扩展跑完整流程 |
 | `tools/` | 原扩展版本追踪脚本 |
@@ -94,7 +93,7 @@ manifest 已声明 16/32/48/128 四个尺寸的图标，构建时从 `extension/
 3. 演示页已内置适配预设，面板会直接进入「题目设置」：填满分、参考答案、评分细则，保存。
 4. 点「获取建议分」→ 检查分数和理由 →「写入并提交」，演示页会切到下一份。
 
-管理后台在 http://127.0.0.1:3000/admin/ ，用 `.env` 里的管理员账号登录。没设 `ADMIN_PASSWORD` 的话，首次启动会在日志里打印一个随机密码。
+控制台在 http://127.0.0.1:3000/console/ （先 `pnpm --filter easy-grader-console build`），用 `.env` 里的管理员账号登录后左侧有「系统管理」；旧地址 `/admin` 会跳过去。没设 `ADMIN_PASSWORD` 的话，首次启动会在日志里打印一个随机密码。
 
 隐私政策文档在 `privacy/privacy-policy.md`，请将它发布到任意公开、无需登录的 HTTPS 静态托管地址，再把该 URL 填到 Chrome/Edge 应用商店的隐私政策字段。隐私政策不由 Easy Grader 服务端托管，也不会进入 Docker 镜像。
 
@@ -279,7 +278,9 @@ docker compose up -d
 
 `docker-compose.yml` 只把端口绑在 `127.0.0.1:3000`，前面需要用 Nginx 或 Caddy 做 HTTPS 反向代理。数据在名为 `easy-grader-data` 的卷里，备份时复制卷中的 `app.db` 即可（先停容器，或者用 `sqlite3 .backup`）。
 
-## 管理后台
+## 系统管理（控制台）
+
+管理员登录控制台后左侧多一组「系统管理」：
 
 - 概览：用户数、评分量、老师确认率、AI 与终分的平均偏差、近 14 天趋势
 - 用户：新建、调额度、重置密码、停用、设为管理员
@@ -291,7 +292,7 @@ docker compose up -d
 
 ## 功能开关
 
-服务端有一套轻量的功能开关，用来灰度和紧急止损，不用发新版扩展。开关在 `server/src/flags/flag-definitions.ts` 里定义（类型、默认值、负责人、计划删除时间），管理后台「功能开关」页只能改取值。
+服务端有一套轻量的功能开关，用来灰度和紧急止损，不用发新版扩展。开关在 `server/src/flags/flag-definitions.ts` 里定义（类型、默认值、负责人、计划删除时间），控制台「功能开关」页只能改取值。
 
 取值优先级：**用户 > 单位 > 按比例 > 全局 > 默认值**。用户在多个单位时取加入最早的、设置了覆盖的单位；按比例放量用 `sha256(key:userId)` 稳定分桶，调大比例时已拿到新值的用户不会变回去。每次修改都记录操作人和修改前后的值。
 

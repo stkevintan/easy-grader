@@ -84,9 +84,110 @@ export interface AdapterPreset {
 
 export interface LedgerItem {
   id: number;
+  userId?: number;
   delta: number;
   balanceAfter: number;
   reason: string;
   note: string;
   createdAt: string;
+}
+
+export interface AdminUser {
+  id: number;
+  username: string;
+  role: 'user' | 'admin';
+  credits: number;
+  disabled: boolean;
+  lastLoginAt: string | null;
+  judged: number;
+  lastJudgeAt: string | null;
+  createdAt: string;
+}
+
+export interface AdminCode {
+  id: number;
+  code: string;
+  credits: number;
+  usedCount: number;
+  maxUses: number;
+  disabled: boolean;
+  expiresAt: string | null;
+  note: string;
+  createdAt: string;
+}
+
+export interface AdminInvite {
+  id: number;
+  unitId: number;
+  usedCount: number;
+  maxUses: number;
+  disabled: boolean;
+  expiresAt: string | null;
+  note: string;
+}
+
+export interface AdminRecord {
+  id: number;
+  userId: number;
+  username: string | null;
+  examTitle: string | null;
+  questionNo: string | null;
+  platformHost: string | null;
+  maxScore: number | null;
+  status: 'done' | 'failed';
+  aiScore: number | null;
+  finalScore: number | null;
+  confidence: number | null;
+  model: string | null;
+  modelProfile: string | null;
+  latencyMs: number;
+  error: string;
+  createdAt: string;
+}
+
+export interface AdminPreset {
+  id: number;
+  name: string;
+  hostPattern: string;
+  pathPattern: string;
+  config: { scoreMode?: string; pics?: { type?: string; multiple?: boolean } };
+  scope: 'public' | 'private';
+  ownerId: number | null;
+  enabled: boolean;
+  note: string;
+  updatedAt: string;
+}
+
+export interface AdminStats {
+  users: number;
+  tasks: number;
+  records: number;
+  failed: number;
+  creditsOutstanding: number;
+  avgLatencyMs: number;
+  avgConfidence: number;
+  avgDrift: number;
+  confirmed: number;
+  daily: { day: string; done: number; failed: number; users: number }[];
+}
+
+export interface FlagOverride {
+  scope: 'global' | 'rollout' | 'unit' | 'user';
+  targetId: number;
+  targetName: string;
+  value: unknown;
+  percent: number | null;
+  valid: boolean;
+  updatedAt: string;
+}
+
+export interface FlagDef {
+  key: string;
+  type: 'boolean' | 'number' | 'string';
+  default: unknown;
+  description: string;
+  owner: string;
+  removeBy: string;
+  client: boolean;
+  overrides: FlagOverride[];
 }

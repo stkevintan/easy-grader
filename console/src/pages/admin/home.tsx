@@ -1,0 +1,45 @@
+import { useQuery } from '@tanstack/react-query';
+import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { api } from '../../api/client';
+import type { AdminStats } from '../../api/types';
+import { Card, Empty, ErrorText, Stat } from '../../ui';
+
+const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
+
+export function AdminHomePage() {
+  const stats = useQuery({ queryKey: ['admin-stats'], queryFn: () => api<AdminStats>('GET', '/api/admin/stats') });
+  const s = stats.data;
+  const confirmRate = s && s.records ? Math.round((s.confirmed / s.records) * 100) : 0;
+  return (
+    <div className="flex flex-col gap-4">
+      <h1 className="text-lg font-semibold">概览</h1>
+      <ErrorText error={stats.error} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="用户数" value={s ? String(s.users) : '…'} />
+        <Stat label="阅卷任务" value={s ? String(s.tasks) : '…'} />
+        <Stat label="成功评分" value={s ? String(s.records) : '…'} hint={s ? `失败 ${s.failed}` : undefined} />
+        <Stat label="老师确认率" value={s ? `${confirmRate}%` : '…'} hint={s ? `${s.confirmed} 份已确认` : undefined} />
+        <Stat label="平均耗时" value={s ? `${(s.avgLatencyMs / 1000).toFixed(1)}s` : '…'} />
+        <Stat label="平均置信度" value={s ? `${Math.round(s.avgConfidence * 100)}%` : '…'} />
+        <Stat label="AI 与终分平均偏差" value={s ? num(s.avgDrift) : '…'} hint="越小说明 AI 越准" />
+        <Stat label="未用额度" value={s ? String(s.creditsOutstanding) : '…'} hint="所有用户余额合计" />
+      </div>
+      <Card title="近 14 天评分量">
+        {s && s.daily.length > 0 ? (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={s.daily}>
+              <XAxis dataKey="day" tick={{ fontSize: 11 }} />
+              <YAxis allowDecimals={false} width={30} />
+              <Tooltip />
+              <Bar dataKey="done" name="成功" fill="#2563eb" stackId="a" />
+              <Bar dataKey="failed" name="失败" fill="#f87171" stackId="a" />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <Empty text={stats.isLoading ? '加载中…' : '还没有评分记录'} />
+        )}
+        <p className="mt-2 text-xs text-slate-500">蓝色为成功，红色为失败（失败不扣次数）。</p>
+      </Card>
+    </div>
+  );
+}

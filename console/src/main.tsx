@@ -2,7 +2,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { createRoot } from 'react-dom/client';
 import { createHashRouter, RouterProvider } from 'react-router';
 import { queryClient } from './api/client';
-import { RequireAuth, Shell } from './layout/shell';
+import { RequireAdmin, RequireAuth, Shell } from './layout/shell';
 import { AccountPage } from './pages/account';
 import { AdaptersPage } from './pages/adapters';
 import { CreditsPage } from './pages/credits';
@@ -10,6 +10,12 @@ import { HomePage } from './pages/home';
 import { LoginPage } from './pages/login';
 import { RecordDetailPage, RecordsPage } from './pages/records';
 import { TasksPage } from './pages/tasks';
+import { AdminCodesPage, AdminInvitesPage } from './pages/admin/codes';
+import { AdminFlagsPage } from './pages/admin/flags';
+import { AdminHomePage } from './pages/admin/home';
+import { AdminPresetsPage } from './pages/admin/presets';
+import { AdminLedgerPage, AdminRecordsPage } from './pages/admin/records';
+import { AdminUsersPage } from './pages/admin/users';
 import './index.css';
 
 const router = createHashRouter([
@@ -27,6 +33,19 @@ const router = createHashRouter([
           { path: '/credits', element: <CreditsPage /> },
           { path: '/adapters', element: <AdaptersPage /> },
           { path: '/account', element: <AccountPage /> },
+          {
+            element: <RequireAdmin />,
+            children: [
+              { path: '/admin', element: <AdminHomePage /> },
+              { path: '/admin/users', element: <AdminUsersPage /> },
+              { path: '/admin/codes', element: <AdminCodesPage /> },
+              { path: '/admin/invites', element: <AdminInvitesPage /> },
+              { path: '/admin/records', element: <AdminRecordsPage /> },
+              { path: '/admin/presets', element: <AdminPresetsPage /> },
+              { path: '/admin/ledger', element: <AdminLedgerPage /> },
+              { path: '/admin/flags', element: <AdminFlagsPage /> },
+            ],
+          },
         ],
       },
     ],
