@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api } from '../api/client';
 import type { AdapterPreset } from '../api/types';
-import { Button, Card, Empty } from '../ui';
+import { Button, Card, Empty, ErrorText } from '../ui';
 
 export function AdaptersPage() {
   const qc = useQueryClient();
@@ -15,6 +15,8 @@ export function AdaptersPage() {
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">我的适配</h1>
       <p className="text-sm text-slate-500">私有适配预设在扩展的向导里创建，这里可以查看和删除。公共预设由系统管理员维护。</p>
+      <ErrorText error={presets.error} />
+      <ErrorText error={remove.error} />
       {presets.data && presets.data.length === 0 && <Empty text="还没有私有适配" />}
       {presets.data?.map((p) => (
         <PresetCard key={p.id} preset={p} onDelete={() => confirm('删除这个适配预设？') && remove.mutate(p.id)} />

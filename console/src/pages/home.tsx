@@ -4,7 +4,7 @@ import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recha
 import { api } from '../api/client';
 import { useMe } from '../api/auth';
 import type { MyStats, Page, RecordItem } from '../api/types';
-import { Card, Empty, Stat } from '../ui';
+import { Card, Empty, ErrorText, Stat } from '../ui';
 
 const pct = (n: number | null) => (n == null ? '—' : `${Math.round(n * 100)}%`);
 const num = (n: number | null) => (n == null ? '—' : n.toFixed(2));
@@ -34,6 +34,8 @@ export function HomePage() {
               <Bar dataKey="failed" name="失败" fill="#f87171" stackId="a" />
             </BarChart>
           </ResponsiveContainer>
+        ) : stats.error ? (
+          <ErrorText error={stats.error} />
         ) : (
           <Empty text={stats.isLoading ? '加载中…' : '还没有评分记录'} />
         )}
@@ -48,6 +50,8 @@ export function HomePage() {
               </li>
             ))}
           </ul>
+        ) : recent.error ? (
+          <ErrorText error={recent.error} />
         ) : (
           <Empty text={recent.isLoading ? '加载中…' : '还没有评分记录'} />
         )}

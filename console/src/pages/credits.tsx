@@ -22,6 +22,7 @@ export function CreditsPage() {
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-lg font-semibold">额度</h1>
+      <ErrorText error={ledger.error} />
       <Card title={`剩余 ${ledger.data?.balance ?? '…'} 次`}>
         <form
           className="flex items-end gap-2"

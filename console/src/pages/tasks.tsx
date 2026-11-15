@@ -24,6 +24,7 @@ export function TasksPage() {
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">阅卷任务</h1>
       <p className="text-sm text-slate-500">任务在扩展里阅卷时自动创建；这里可以修改评分标准和参考答案。考试名称和题号是任务的标识，改动请在阅卷页完成。</p>
+      <ErrorText error={tasks.error} />
       {tasks.data && tasks.data.length === 0 && <Empty text="还没有阅卷任务" />}
       {tasks.data?.map((t) => (
         <TaskCard key={t.taskId} task={t} />
@@ -61,6 +62,7 @@ function TaskCard({ task }: { task: TaskInfo }) {
           >删除</Button>
         </div>
       </div>
+      <ErrorText error={remove.error} />
       {editing && <TaskEditor task={task} onDone={() => setEditing(false)} />}
     </Card>
   );

@@ -32,7 +32,8 @@ export function LoginPage() {
           <Button variant="primary" type="submit" disabled={pending}>{pending ? '请稍候…' : mode === 'login' ? '登录' : '注册'}</Button>
           <button
             type="button"
-            className="text-sm text-brand"
+            className="text-sm text-brand disabled:opacity-50"
+            disabled={pending}
             onClick={() => { login.reset(); register.reset(); setMode(mode === 'login' ? 'register' : 'login'); }}
           >
             {mode === 'login' ? '没有账号？用邀请令牌注册' : '已有账号？返回登录'}

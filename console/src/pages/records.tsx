@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { api } from '../api/client';
 import type { Page, RecordDetail, RecordItem } from '../api/types';
-import { Card, Empty, Pager } from '../ui';
+import { Card, Empty, ErrorText, Pager } from '../ui';
 
 export function RecordsPage() {
   const [params] = useSearchParams();
@@ -17,6 +17,7 @@ export function RecordsPage() {
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">评分记录{taskId ? `（任务 ${taskId}）` : ''}</h1>
+      <ErrorText error={records.error} />
       {records.data && records.data.items.length === 0 && <Empty text="没有评分记录" />}
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
         {records.data && records.data.items.length > 0 && (
