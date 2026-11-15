@@ -25,7 +25,7 @@ COPY e2e/package.json e2e/
 COPY tools/package.json tools/
 COPY console/package.json console/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
-    pnpm install --frozen-lockfile --filter easy-grader-server...
+    pnpm install --frozen-lockfile --filter easy-grader-server... --filter easy-grader-console...
 
 COPY server/ server/
 COPY console/ console/

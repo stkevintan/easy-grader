@@ -27,8 +27,10 @@ export async function api<T>(method: string, path: string, body?: unknown): Prom
     },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  if (res.status === 401 && token) {
+  // 只在当前登录态还是这次请求用的 token 时退出：迟到的旧请求不能清掉刚换上的新 token
+  if (res.status === 401 && token && session.token() === token) {
     session.clear();
+    queryClient.clear();
     if (!location.hash.startsWith('#/login')) location.hash = '#/login';
   }
   const text = await res.text();

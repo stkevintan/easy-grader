@@ -24,7 +24,7 @@ export function LoginPage() {
       <Card title={mode === 'login' ? '登录 Easy Grader' : '注册账号'}>
         <form className="flex w-80 flex-col gap-3" onSubmit={onSubmit}>
           <Field label="用户名"><Input name="username" autoComplete="username" required maxLength={32} /></Field>
-          <Field label="密码"><Input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={8} maxLength={128} /></Field>
+          <Field label="密码"><Input name="password" type="password" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} required minLength={mode === 'register' ? 8 : 1} maxLength={128} /></Field>
           {mode === 'register' && (
             <Field label="邀请令牌"><Input name="inviteToken" required minLength={10} maxLength={80} placeholder="由管理员发放" /></Field>
           )}
