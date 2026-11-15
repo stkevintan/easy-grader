@@ -8,9 +8,15 @@ export function AccountPage() {
   const me = useMe();
   const [mismatch, setMismatch] = useState(false);
   const change = useMutation({
-    mutationFn: (input: { oldPassword: string; newPassword: string }) =>
-      api<{ token: string }>('POST', '/api/auth/password', input),
-    onSuccess: (r) => session.set(r.token),
+    mutationFn: async (input: { oldPassword: string; newPassword: string }) => {
+      const tokenAtRequest = session.token();
+      const r = await api<{ token: string }>('POST', '/api/auth/password', input);
+      return { token: r.token, tokenAtRequest };
+    },
+    // 请求期间用户可能已经退出或换了账号，不能把旧请求的 token 写回去
+    onSuccess: (r) => {
+      if (session.token() === r.tokenAtRequest) session.set(r.token);
+    },
   });
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();

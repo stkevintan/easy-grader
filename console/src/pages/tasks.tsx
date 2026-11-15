@@ -5,6 +5,9 @@ import { api } from '../api/client';
 import type { TaskInfo } from '../api/types';
 import { Button, Card, Empty, ErrorText, Field, Input, TextArea } from '../ui';
 
+/** 服务端 keywords 上限是 2000，其余内容字段是 8000 */
+const fieldLimit = (key: string) => (key === 'keywords' ? 2000 : 8000);
+
 const CONTENT_FIELDS: [string, string][] = [
   ['title', '题目'],
   ['reference', '参考答案'],
@@ -108,7 +111,7 @@ function TaskEditor({ task, onDone }: { task: TaskInfo; onDone: () => void }) {
       </Field>
       {CONTENT_FIELDS.filter(([key]) => key !== task.majorInput.key).map(([key, label]) => (
         <div key={key} className="md:col-span-2">
-          <Field label={label}><TextArea name={key} defaultValue={String(task.question.content[key] ?? '')} maxLength={8000} /></Field>
+          <Field label={label}><TextArea name={key} defaultValue={String(task.question.content[key] ?? '')} maxLength={fieldLimit(key)} /></Field>
         </div>
       ))}
       <div className="md:col-span-2">
@@ -116,7 +119,7 @@ function TaskEditor({ task, onDone }: { task: TaskInfo; onDone: () => void }) {
       </div>
       <Field label="评分标准名称"><Input name="rubricName" defaultValue={task.majorInput.name} maxLength={50} /></Field>
       <div className="md:col-span-2">
-        <Field label="评分标准"><TextArea name="rubric" defaultValue={task.majorInput.content} maxLength={8000} /></Field>
+        <Field label="评分标准"><TextArea name="rubric" defaultValue={task.majorInput.content} maxLength={fieldLimit(task.majorInput.key)} /></Field>
       </div>
       <div className="flex items-center gap-3 md:col-span-2">
         <Button variant="primary" type="submit" disabled={save.isPending}>{save.isPending ? '保存中…' : '保存'}</Button>

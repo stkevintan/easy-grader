@@ -257,9 +257,11 @@ export class JudgeService {
     const r = await this.records.findOneBy({ userId, gradingId });
     if (!r) return null;
     const task = await this.tasks.findOneBy({ id: r.taskId });
-    const view = task ? toGradingInfo(r, task, false, this.billing.balance(userId)) : null;
+    // 任务被删掉时详情字段不全，按不存在处理，避免前端读到缺字段的对象
+    if (!task) return null;
+    const view = toGradingInfo(r, task, false, this.billing.balance(userId));
     return {
-      ...(view ?? { gradingId: r.gradingId ?? '', taskId: r.taskId }),
+      ...view,
       status: r.status,
       charged: r.charged,
       error: r.error,
@@ -267,16 +269,14 @@ export class JudgeService {
       latencyMs: r.latencyMs,
       createdAt: r.createdAt,
       confirmedAt: r.confirmedAt,
-      task: task
-        ? {
-            examTitle: task.examTitle,
-            questionNo: task.questionNo,
-            subject: task.subject,
-            questionType: task.questionType,
-            platformHost: task.platformHost,
-            maxScore: task.maxScore,
-          }
-        : null,
+      task: {
+        examTitle: task.examTitle,
+        questionNo: task.questionNo,
+        subject: task.subject,
+        questionType: task.questionType,
+        platformHost: task.platformHost,
+        maxScore: task.maxScore,
+      },
     };
   }
 
