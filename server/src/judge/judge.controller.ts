@@ -1,9 +1,11 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   HttpCode,
+  NotFoundException,
   Param,
   ParseIntPipe,
   Post,
@@ -75,5 +77,22 @@ export class JudgeController {
   @Get('records')
   records(@CurrentUser() u: AuthUser, @Query() q: ListQuery) {
     return this.judge.listRecords(u.id, q.taskId, q.page, q.pageSize);
+  }
+
+  /** 控制台用：单条评分记录详情（含 OCR 文本），只能看自己的 */
+  @Get('records/:gradingId')
+  async recordDetail(@CurrentUser() u: AuthUser, @Param('gradingId') gradingId: string) {
+    if (!/^[A-Za-z0-9_-]{6,40}$/.test(gradingId)) throw new BadRequestException('评分记录不存在');
+    const detail = await this.judge.recordDetail(u.id, gradingId);
+    if (!detail) throw new NotFoundException('评分记录不存在');
+    return detail;
+  }
+
+  /** 控制台首页用：个人近 N 天的评分量和总体偏差 */
+  @Get('me/stats')
+  myStats(@CurrentUser() u: AuthUser, @Query('days') days?: string) {
+    const n = days === undefined ? 30 : Number(days);
+    if (!Number.isInteger(n) || n < 1 || n > 180) throw new BadRequestException('days 必须是 1 到 180 的整数');
+    return this.judge.myStats(u.id, n);
   }
 }

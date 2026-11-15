@@ -38,6 +38,12 @@ export function configureApp(app: INestApplication, cfg: AppConfig) {
     ex.useStaticAssets(admin, { prefix: '/admin/', index: 'index.html' });
     express.get('/admin', (_req, res) => res.redirect('/admin/'));
   }
+  // 新控制台（console/dist，Vite 构建产物）。P2 之前 /admin 仍指向旧后台
+  const consoleDir = cfg.consoleDir || join(root, 'console', 'dist');
+  if (existsSync(join(consoleDir, 'index.html'))) {
+    ex.useStaticAssets(consoleDir, { prefix: '/console/', index: 'index.html' });
+    express.get('/console', (_req, res) => res.redirect('/console/'));
+  }
   const demo = cfg.demoDir || join(root, 'demo');
   if (cfg.serveDemo && existsSync(demo)) ex.useStaticAssets(demo, { prefix: '/demo/', index: 'index.html' });
 }

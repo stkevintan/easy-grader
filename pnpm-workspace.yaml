@@ -3,6 +3,7 @@ packages:
   - extension
   - e2e
   - tools
+  - console
 
 # pnpm 默认不执行依赖的安装脚本，这里只放行确实需要编译/下载二进制的包
 allowBuilds:

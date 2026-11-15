@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Easy Grader 服务端镜像。构建上下文必须是仓库根目录（需要 pnpm workspace、admin/、demo/）：
+# Easy Grader 服务端镜像。构建上下文必须是仓库根目录（需要 pnpm workspace、admin/、console/、demo/）：
 #
 #   docker build -f server/Dockerfile -t ghcr.io/stkevintan/easy-grader-server:dev .
 #
@@ -23,11 +23,14 @@ COPY server/package.json server/
 COPY extension/package.json extension/
 COPY e2e/package.json e2e/
 COPY tools/package.json tools/
+COPY console/package.json console/
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --filter easy-grader-server...
 
 COPY server/ server/
-RUN pnpm --filter easy-grader-server run build \
+COPY console/ console/
+RUN pnpm --filter easy-grader-console run build \
+ && pnpm --filter easy-grader-server run build \
  && pnpm --filter easy-grader-server --prod deploy /out \
  && rm -rf /out/src /out/test /out/tsconfig*.json /out/Dockerfile /out/scripts /out/docker-compose.yml /out/.env*
 
@@ -38,6 +41,7 @@ ENV NODE_ENV=production \
     PORT=3000 \
     DB_PATH=/data/app.db \
     ADMIN_DIR=/app/admin \
+    CONSOLE_DIR=/app/console \
     DEMO_DIR=/app/demo \
     SERVE_DEMO=false \
     SEED_DEMO_PRESET=false
@@ -45,6 +49,7 @@ WORKDIR /app
 
 COPY --from=build --chown=node:node /out/ ./
 COPY --chown=node:node admin/ ./admin/
+COPY --from=build --chown=node:node /repo/console/dist/ ./console/
 COPY --chown=node:node demo/ ./demo/
 
 # SQLite 数据库和自动生成的 JWT 密钥都放在 /data，挂卷持久化

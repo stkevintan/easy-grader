@@ -11,6 +11,7 @@
 | `server/` | NestJS + SQLite 服务端：账号、额度、兑换码、AI 评分、适配预设；同时托管管理后台和演示页 |
 | `extension/` | Chrome / Edge MV3 扩展（TypeScript + esbuild） |
 | `admin/` | 管理后台（原生 JS，无构建步骤，由服务端 `/admin/` 提供） |
+| `console/` | 新控制台（TypeScript + React + Tailwind，Vite 构建，由服务端 `/console/` 提供；设计见 [docs/console-design.md](docs/console-design.md)，P1 只有「我的」） |
 | `demo/` | 两个本地模拟阅卷页（输入框给分、打分板给分），用于没有真实平台账号时联调 |
 | `e2e/` | Playwright 端到端测试：真实 Chromium 加载扩展跑完整流程 |
 | `tools/` | 原扩展版本追踪脚本 |
@@ -20,6 +21,7 @@
 - [数据库设计](docs/database.md)：表结构、索引、任务 JSON 结构和启动迁移
 - [API 参考](docs/api.md)：登录、任务、评分、记录、适配预设和管理接口
 - [实现说明](docs/implementation-notes.md)：整体设计、适配器契约和状态机
+- [通用控制台设计](docs/console-design.md)：新控制台的角色、组织和分阶段计划
 
 ## 快速开始
 

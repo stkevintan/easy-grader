@@ -54,8 +54,10 @@ export interface AppConfig {
   seedDemoPreset: boolean;
   /** 平台预设 YAML 目录；为空则用 server/presets */
   presetsDir: string;
-  /** 管理后台 / 演示页静态文件目录；为空则在仓库根目录查找 */
+  /** 管理后台 / 控制台 / 演示页静态文件目录；为空则在仓库根目录查找 */
   adminDir: string;
+  /** 新控制台（console/dist）；为空则在仓库根目录查找 console/dist */
+  consoleDir: string;
   demoDir: string;
   /** 是否提供 /demo/ 演示阅卷页 */
   serveDemo: boolean;
@@ -188,6 +190,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     seedDemoPreset: bool(env.SEED_DEMO_PRESET, true),
     presetsDir: env.PRESETS_DIR ? resolve(env.PRESETS_DIR) : '',
     adminDir: env.ADMIN_DIR ? resolve(env.ADMIN_DIR) : '',
+    consoleDir: env.CONSOLE_DIR ? resolve(env.CONSOLE_DIR) : '',
     demoDir: env.DEMO_DIR ? resolve(env.DEMO_DIR) : '',
     serveDemo: bool(env.SERVE_DEMO, true),
     rateLimit: {

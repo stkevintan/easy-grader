@@ -242,6 +242,25 @@ describe('Easy Grader server (e2e)', () => {
     expect(tasks.body.find((t: any) => t.taskId === taskId)).toMatchObject({ judged: 3, confirmed: 1 });
   });
 
+  it('评分记录详情只能看自己的；个人用量统计按天汇总', async () => {
+    const recs = await http.get('/api/records').query({ taskId }).set(auth(userToken)).expect(200);
+    const id = recs.body.items.find((r: any) => r.status === 'done').gradingId;
+    const detail = await http.get(`/api/records/${id}`).set(auth(userToken)).expect(200);
+    expect(detail.body).toMatchObject({ gradingId: id, taskId, status: 'done' });
+    expect(detail.body.task).toMatchObject({ examTitle: '期中考试', questionNo: '17' });
+    // 别人的记录看不到
+    const other = await http.post('/api/auth/login').send({ username: '王老师', password: 'password-123' }).expect(200);
+    await http.get(`/api/records/${id}`).set(auth(other.body.token)).expect(404);
+    await http.get('/api/records/x').set(auth(userToken)).expect(400);
+    await http.get('/api/records/missing-id').set(auth(userToken)).expect(404);
+    const stats = await http.get('/api/me/stats').set(auth(userToken)).expect(200);
+    expect(stats.body.days).toBe(30);
+    expect(stats.body.totals.done).toBeGreaterThanOrEqual(1);
+    expect(stats.body.daily.reduce((n: number, d: { done: number }) => n + d.done, 0)).toBe(stats.body.totals.done);
+    await http.get('/api/me/stats').query({ days: 0 }).set(auth(userToken)).expect(400);
+    await http.get('/api/me/stats').set(auth('')).expect(401);
+  });
+
   let code: string;
 
   it('管理员生成兑换码，用户兑换一次，重复兑换被拒，用完被拒', async () => {
