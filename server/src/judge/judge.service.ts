@@ -251,4 +251,66 @@ export class JudgeService {
       pageSize,
     };
   }
+
+  /** 单条评分记录详情；只能看自己的 */
+  async recordDetail(userId: number, gradingId: string) {
+    const r = await this.records.findOneBy({ userId, gradingId });
+    if (!r) return null;
+    const task = await this.tasks.findOneBy({ id: r.taskId });
+    // 任务被删掉时详情字段不全，按不存在处理，避免前端读到缺字段的对象
+    if (!task) return null;
+    const view = toGradingInfo(r, task, false, this.billing.balance(userId));
+    return {
+      ...view,
+      status: r.status,
+      charged: r.charged,
+      error: r.error,
+      modelProfile: r.modelProfile,
+      latencyMs: r.latencyMs,
+      createdAt: r.createdAt,
+      confirmedAt: r.confirmedAt,
+      task: {
+        examTitle: task.examTitle,
+        questionNo: task.questionNo,
+        subject: task.subject,
+        questionType: task.questionType,
+        platformHost: task.platformHost,
+        maxScore: task.maxScore,
+      },
+    };
+  }
+
+  /** 个人用量：近 days 天每天的评分量、失败数，以及总体的平均偏差和自动提交比例 */
+  async myStats(userId: number, days = 30) {
+    const span = Math.min(Math.max(Math.floor(days) || 30, 1), 180);
+    const rows = await this.records
+      .createQueryBuilder('r')
+      .select("date(r.createdAt)", 'day')
+      .addSelect("SUM(CASE WHEN r.status = 'done' THEN 1 ELSE 0 END)", 'done')
+      .addSelect("SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END)", 'failed')
+      .where("r.userId = :userId AND r.createdAt >= date('now', :from)", { userId, from: `-${span - 1} days` })
+      .groupBy("date(r.createdAt)")
+      .orderBy('day', 'ASC')
+      .getRawMany<{ day: string; done: number; failed: number }>();
+    const summary = await this.records
+      .createQueryBuilder('r')
+      .select("SUM(CASE WHEN r.status = 'done' THEN 1 ELSE 0 END)", 'done')
+      .addSelect("SUM(CASE WHEN r.status = 'failed' THEN 1 ELSE 0 END)", 'failed')
+      .addSelect("SUM(CASE WHEN r.autoSubmitted THEN 1 ELSE 0 END)", 'autoSubmitted')
+      .addSelect('AVG(CASE WHEN r.finalScore IS NOT NULL THEN ABS(r.finalScore - r.aiScore) END)', 'avgDrift')
+      .addSelect('AVG(CASE WHEN r.status = :done THEN r.confidence END)', 'avgConfidence')
+      .where('r.userId = :userId', { userId, done: 'done' })
+      .getRawOne<{ done: number; failed: number; autoSubmitted: number; avgDrift: number | null; avgConfidence: number | null }>();
+    return {
+      days: span,
+      daily: rows.map((d) => ({ day: d.day, done: Number(d.done), failed: Number(d.failed) })),
+      totals: {
+        done: Number(summary?.done ?? 0),
+        failed: Number(summary?.failed ?? 0),
+        autoSubmitted: Number(summary?.autoSubmitted ?? 0),
+        avgDrift: summary?.avgDrift == null ? null : Number(summary.avgDrift),
+        avgConfidence: summary?.avgConfidence == null ? null : Number(summary.avgConfidence),
+      },
+    };
+  }
 }

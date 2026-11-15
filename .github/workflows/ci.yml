@@ -38,5 +38,5 @@ jobs:
       - name: Run tests
         run: pnpm test
 
-      - name: Build server and extension
+      - name: Build server, extension and console
         run: pnpm build

@@ -350,6 +350,24 @@
 }
 ```
 
+### `GET /api/records/:gradingId`
+
+单条评分记录详情，只能看自己的。在列表字段之外还有 `ocr`、`modelProfile`、`latencyMs` 和 `task`（考试名、题号、学科、题型、平台、满分）。不存在返回 `404`；`gradingId` 不是 6 到 40 位字母数字（含 `-`、`_`）返回 `400`。
+
+### `GET /api/me/stats?days=30`
+
+当前用户的用量。`days` 为 1 到 180 的整数，默认 30。
+
+```json
+{
+  "days": 30,
+  "daily": [{ "day": "2026-11-14", "done": 12, "failed": 1 }],
+  "totals": { "done": 40, "failed": 2, "autoSubmitted": 5, "avgDrift": 0.4, "avgConfidence": 0.83 }
+}
+```
+
+`daily` 只含窗口内有记录的天；`totals` 是全部历史。`avgDrift` 是已确认记录的 |最终分 − AI 分| 的平均值，没有确认过时为 `null`。
+
 ## 平台适配
 
 ### `GET /api/adapters/resolve?host=...&path=...`
