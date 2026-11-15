@@ -98,7 +98,10 @@ export function Dialog({
           <DialogInput key={f.name} field={f} />
         ))}
         {extra}
-        <ErrorText error={error} />
+        {/* 始终挂载的 live region：提交失败的错误插进来时屏幕阅读器会播报 */}
+        <div role="alert" aria-live="assertive">
+          <ErrorText error={error} />
+        </div>
         <div className="flex justify-end gap-2">
           <Button type="button" onClick={close} disabled={pending}>{onSubmit ? '取消' : '关闭'}</Button>
           {onSubmit && <Button variant="primary" type="submit" disabled={pending}>{pending ? '请稍候…' : submitText}</Button>}

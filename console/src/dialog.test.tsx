@@ -25,6 +25,22 @@ describe('对话框', () => {
     await vi.waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
+  it('提交失败的错误出现在 alert 区域里，弹窗不关闭', async () => {
+    const onClose = vi.fn();
+    render(
+      <Dialog
+        title="新建用户"
+        onSubmit={async () => {
+          throw new Error('用户名已存在');
+        }}
+        onClose={onClose}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: '确定' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('用户名已存在');
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('没在提交时 Escape 和取消都能关闭', async () => {
     const onClose = vi.fn();
     render(<Dialog title="确认" onSubmit={() => undefined} onClose={onClose} />);

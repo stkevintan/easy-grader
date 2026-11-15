@@ -6,7 +6,13 @@ import type { AdminRecord, LedgerItem, Page } from '../../api/types';
 import { Button, ledgerReason } from '../../ui';
 import { LinkBtn, ListPage, SearchBox, Tag, fmtNum, fmtTime, qs } from './common';
 
+/** 按用户筛选变化时（含浏览器前进/后退）用 key 重建列表，页码和搜索回到初始 */
 export function AdminRecordsPage() {
+  const [params] = useSearchParams();
+  return <AdminRecordsList key={params.get('userId') ?? ''} />;
+}
+
+function AdminRecordsList() {
   const [params] = useSearchParams();
   const userId = params.get('userId');
   const [page, setPage] = useState(1);
@@ -58,6 +64,11 @@ export function AdminRecordsPage() {
 }
 
 export function AdminLedgerPage() {
+  const [params] = useSearchParams();
+  return <AdminLedgerList key={params.get('userId') ?? ''} />;
+}
+
+function AdminLedgerList() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const userId = params.get('userId');
