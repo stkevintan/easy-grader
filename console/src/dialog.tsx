@@ -37,22 +37,32 @@ export function Dialog({
 }) {
   const [error, setError] = useState<unknown>(null);
   const [pending, setPending] = useState(false);
+  // 提交期间不许关闭（取消按钮、Escape、点遮罩）：否则迟到的提交回调会调用共享的 onClose，关掉之后打开的另一个弹窗
+  const pendingRef = useRef(false);
+  const close = () => {
+    if (!pendingRef.current) onClose();
+  };
   const submit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (pendingRef.current) return;
     if (!onSubmit) return onClose();
     const data = Object.fromEntries(new FormData(e.currentTarget)) as Record<string, string>;
     for (const f of fields) if (f.type === 'checkbox') data[f.name] = data[f.name] ? 'on' : '';
     const values: Record<string, string | boolean> = {};
     for (const f of fields) values[f.name] = f.type === 'checkbox' ? data[f.name] === 'on' : (data[f.name] ?? '');
+    pendingRef.current = true;
     setPending(true);
     setError(null);
+    let ok = false;
     try {
-      if ((await onSubmit(values)) !== false) onClose();
+      ok = (await onSubmit(values)) !== false;
     } catch (err) {
       setError(err);
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
+    if (ok) onClose();
   };
   // 用原生 <dialog> 的 showModal：浏览器负责初始焦点、焦点约束、背景不可操作，关闭后把焦点还给打开前的元素
   const ref = useRef<HTMLDialogElement>(null);
@@ -73,10 +83,10 @@ export function Dialog({
       // Escape 触发 cancel：交给上层关闭，避免浏览器先关掉 dialog 而 React 状态没变
       onCancel={(e) => {
         e.preventDefault();
-        onClose();
+        close();
       }}
       // 点到 dialog 本身（即背景遮罩）时关闭
-      onClick={(e) => e.target === e.currentTarget && onClose()}
+      onClick={(e) => e.target === e.currentTarget && close()}
     >
       <form
         id="dialog-form"
@@ -90,7 +100,7 @@ export function Dialog({
         {extra}
         <ErrorText error={error} />
         <div className="flex justify-end gap-2">
-          <Button type="button" onClick={onClose}>{onSubmit ? '取消' : '关闭'}</Button>
+          <Button type="button" onClick={close} disabled={pending}>{onSubmit ? '取消' : '关闭'}</Button>
           {onSubmit && <Button variant="primary" type="submit" disabled={pending}>{pending ? '请稍候…' : submitText}</Button>}
         </div>
       </form>

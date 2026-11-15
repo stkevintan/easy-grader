@@ -134,16 +134,20 @@ export function ListPage<T>({
   );
 }
 
-/** 生成结果的展示：只读文本框加复制按钮 */
-export function CopyList({ lines }: { lines: string[] }) {
+/**
+ * 生成结果的展示：只读文本框加复制按钮。
+ * lines 是展示的内容；copy 是「复制全部」复制的内容，默认同 lines。
+ */
+export function CopyList({ label, lines, copy = lines }: { label: string; lines: string[]; copy?: string[] }) {
   const [copied, setCopied] = useState(false);
   return (
     <div className="flex flex-col gap-2">
+      <label htmlFor="f-codes" className="text-sm text-slate-600 dark:text-slate-300">{label}</label>
       <textarea id="f-codes" readOnly value={lines.join('\n')} rows={Math.min(12, Math.max(3, lines.length))} className="w-full rounded-md border border-slate-300 px-3 py-1.5 font-mono text-sm dark:border-slate-600 dark:bg-slate-800" />
       <button
         type="button"
         className="self-start text-sm text-brand hover:underline"
-        onClick={() => navigator.clipboard.writeText(lines.join('\n')).then(() => setCopied(true))}
+        onClick={() => navigator.clipboard.writeText(copy.join('\n')).then(() => setCopied(true))}
       >
         {copied ? '已复制' : '复制全部'}
       </button>

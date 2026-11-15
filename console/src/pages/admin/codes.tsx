@@ -105,7 +105,7 @@ export function AdminCodesPage() {
         />
       )}
       {created && (
-        <Dialog title={`已生成 ${created.length} 个兑换码`} extra={<CopyList lines={created} />} onClose={() => setCreated(null)} />
+        <Dialog title={`已生成 ${created.length} 个兑换码`} extra={<CopyList lines={created} label="生成的兑换码，复制后分发给老师" />} onClose={() => setCreated(null)} />
       )}
     </>
   );
@@ -212,7 +212,7 @@ export function AdminInvitesPage() {
         />
       )}
       {created && (
-        <Dialog title={`已生成 ${created.length} 个邀请令牌`} extra={<CopyList lines={created.map((x) => x.token)} />} onClose={() => setCreated(null)} />
+        <Dialog title={`已生成 ${created.length} 个邀请令牌`} extra={<CopyList lines={created.map((x) => `${x.id}: ${x.token}`)} copy={created.map((x) => x.token)} label="编号: 令牌（复制全部只复制令牌，编号对应列表里的 ID，用来单独停用）" />} onClose={() => setCreated(null)} />
       )}
     </>
   );
