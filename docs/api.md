@@ -97,6 +97,14 @@
 { "id": 2, "username": "e2e_teacher", "role": "user", "credits": 18, "createdAt": "...", "org": { "id": 1, "name": "一中" } }
 ```
 
+### `POST /api/auth/handoff`
+
+需要登录。扩展打开控制台前调用，返回一次性交接码 `{ code, expiresIn: 60 }`。码 60 秒过期、只能用一次，服务端只在内存里存它的哈希；签发后改了密码或被停用，码作废。扩展把它放在控制台地址的 `#` 后面（`/console/#/handoff?code=…&to=/credits`），不会出现在服务端访问日志里。
+
+### `POST /api/auth/handoff/redeem`
+
+不需要登录。`{ code }`，返回和登录一样的 `{ token, user }`；码无效、过期或已用过返回 401。
+
 ### `POST /api/auth/password`
 
 ```json

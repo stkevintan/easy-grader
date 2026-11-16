@@ -11,6 +11,7 @@ import { AdminController } from './admin/admin.controller';
 import { OrgController } from './admin/org.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
+import { HandoffService } from './auth/handoff.service';
 import { BillingService } from './billing/billing.service';
 import { AuthGuard } from './common/auth.guard';
 import { UserThrottlerGuard } from './common/throttler.guard';
@@ -66,6 +67,7 @@ export class AppModule {
         { provide: APP_CONFIG, useValue: cfg },
         BillingService,
         AuthService,
+        HandoffService,
         ModelService,
         JudgeService,
         GoldService,

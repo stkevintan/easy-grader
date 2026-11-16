@@ -253,6 +253,17 @@ document.addEventListener('DOMContentLoaded', async () => {
       say('redeem-msg', 'error', errText(err));
     }
   });
+  const openConsole = (path: string, msgId: string) => async () => {
+    try {
+      await bg({ cmd: 'console.open', path });
+      window.close();
+    } catch (err) {
+      say(msgId, 'error', errText(err));
+    }
+  };
+  $('open-console').addEventListener('click', openConsole('/', 'redeem-msg'));
+  $('credits').addEventListener('click', openConsole('/credits', 'redeem-msg'));
+  $('console-login').addEventListener('click', openConsole('/login', 'login-msg'));
   $('open-panel').addEventListener('click', togglePanel);
   $('enable-site').addEventListener('click', enableSite);
 

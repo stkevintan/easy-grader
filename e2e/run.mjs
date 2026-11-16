@@ -231,6 +231,22 @@ async function main() {
     assert.equal(await popup2.textContent('#credits'), '103');
     console.log('  兑换成功，余额 103');
 
+    step('popup：点额度打开控制台，免登录带过去；控制台已登录别的账号时先问');
+    // 管理员的控制台标签页还开着：后台应复用它，而不是另开一个
+    const pagesBefore = ctx.pages().length;
+    await popup2.click('#credits');
+    await admin.waitForURL(/\/console\/#\/handoff/);
+    await admin.locator('text=要切换吗').waitFor();
+    assert.equal(ctx.pages().filter((pg) => pg.url().includes('/console/')).length, 1, '应复用已开的控制台标签页');
+    assert.ok(ctx.pages().length <= pagesBefore, '不应新开标签页');
+    // 交接码已从地址栏去掉
+    assert.ok(!admin.url().includes('code='), admin.url());
+    await admin.click('button:has-text("切换到 e2e_teacher")');
+    await admin.waitForURL(/#\/credits$/);
+    await admin.locator('main', { hasText: '剩余 103 次' }).waitFor();
+    assert.equal(await admin.evaluate(() => document.querySelector('aside')?.textContent.includes('e2e_teacher')), true);
+    console.log('  控制台已切换到 e2e_teacher，并打开额度页');
+
     step('跨域 canvas：insert.js 记录原图地址，内容脚本改由后台下载');
     // 再起一个不同端口的静态服务当“图片 CDN”，页面把它的图画到 canvas 上 → 画布被污染
     const { createServer } = await import('node:http');

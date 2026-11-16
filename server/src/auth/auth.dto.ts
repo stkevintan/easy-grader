@@ -22,6 +22,10 @@ export class ChangePasswordDto {
   @IsString() @Length(8, 128, { message: '新密码长度需为 8-128 位' }) newPassword!: string;
 }
 
+export class HandoffRedeemDto {
+  @IsString() @Length(10, 100) code!: string;
+}
+
 export class RedeemDto {
   @IsString() @Length(4, 40) code!: string;
 }

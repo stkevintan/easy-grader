@@ -6,7 +6,7 @@
  * - 管理用户启用的阅卷站点（动态注册内容脚本）
  */
 import type { BgRequest, BgResponse, ClientFlags, FlagsResult, PublicUser, Settings } from './shared/protocol';
-import { DEFAULT_SETTINGS, SAFE_FLAGS } from './shared/protocol';
+import { DEFAULT_SETTINGS, SAFE_FLAGS, safeConsolePath } from './shared/protocol';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -192,6 +192,37 @@ async function repairSites() {
   }
 }
 
+// ---------- 打开控制台 ----------
+
+/**
+ * 打开控制台：已登录时先换一次性交接码（放在 # 后面，不进服务端日志），
+ * 控制台用它换自己的登录；没登录或换码时登录已失效，就打开控制台的登录页。
+ * 已经开着控制台的标签页时切过去，不另开新的。
+ */
+async function openConsole(path: string) {
+  const { serverUrl } = await settings();
+  const base = `${serverUrl.replace(/\/+$/, '')}/console/`;
+  const to = safeConsolePath(path);
+  let hash = '#/login';
+  if ((await store.get()).token && to !== '/login') {
+    try {
+      const { code } = await api<{ code: string }>('POST', '/api/auth/handoff');
+      hash = `#/handoff?${qs({ code, to })}`;
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) throw e;
+    }
+  }
+  const url = base + hash;
+  const existing = (await chrome.tabs.query({})).find((t) => t.id !== undefined && t.url?.startsWith(base));
+  if (existing?.id !== undefined) {
+    await chrome.tabs.update(existing.id, { url, active: true });
+    if (existing.windowId !== undefined) await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url });
+  }
+  return {};
+}
+
 // ---------- 命令路由 ----------
 
 type Sender = chrome.runtime.MessageSender;
@@ -288,6 +319,8 @@ async function handle(req: BgRequest, sender: Sender): Promise<unknown> {
     case 'site.disable':
       await unregisterSite(new URL(req.origin).origin);
       return {};
+    case 'console.open':
+      return openConsole(req.path);
     default: {
       const never: never = req;
       throw new Error(`未知命令：${(never as { cmd?: string }).cmd}`);

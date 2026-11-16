@@ -93,7 +93,7 @@ manifest 已声明 16/32/48/128 四个尺寸的图标，构建时从 `extension/
 3. 演示页已内置适配预设，面板会直接进入「题目设置」：填满分、参考答案、评分细则，保存。
 4. 点「获取建议分」→ 检查分数和理由 →「写入并提交」，演示页会切到下一份。
 
-控制台在 http://127.0.0.1:3000/console/ （先 `pnpm --filter easy-grader-console build`），用 `.env` 里的管理员账号登录后左侧有「系统管理」；旧地址 `/admin` 会跳过去。没设 `ADMIN_PASSWORD` 的话，首次启动会在日志里打印一个随机密码。
+控制台在 http://127.0.0.1:3000/console/ （先 `pnpm --filter easy-grader-console build`），用 `.env` 里的管理员账号登录后左侧有「系统管理」；旧地址 `/admin` 会跳过去。在扩展 popup 里点「打开控制台」或额度数字，会免登录打开控制台（已开着控制台的标签页时直接切过去）。没设 `ADMIN_PASSWORD` 的话，首次启动会在日志里打印一个随机密码。
 
 隐私政策文档在 `privacy/privacy-policy.md`，请将它发布到任意公开、无需登录的 HTTPS 静态托管地址，再把该 URL 填到 Chrome/Edge 应用商店的隐私政策字段。隐私政策不由 Easy Grader 服务端托管，也不会进入 Docker 镜像。
 

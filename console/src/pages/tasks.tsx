@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { api } from '../api/client';
 import type { TaskInfo } from '../api/types';
 import { Button, Card, Empty, ErrorText, Field, Input, TextArea } from '../ui';
@@ -20,6 +20,8 @@ const CONTENT_FIELDS: [string, string][] = [
 
 export function TasksPage() {
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => api<TaskInfo[]>('GET', '/api/tasks') });
+  // 从扩展「在控制台查看此题」进来时带 ?taskId=，定位到那一题
+  const focusId = Number(useSearchParams()[0].get('taskId')) || null;
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">阅卷任务</h1>
@@ -27,20 +29,25 @@ export function TasksPage() {
       <ErrorText error={tasks.error} />
       {tasks.data && tasks.data.length === 0 && <Empty text="还没有阅卷任务" />}
       {tasks.data?.map((t) => (
-        <TaskCard key={t.taskId} task={t} />
+        <TaskCard key={t.taskId} task={t} focused={t.taskId === focusId} />
       ))}
     </div>
   );
 }
 
-function TaskCard({ task }: { task: TaskInfo }) {
+function TaskCard({ task, focused = false }: { task: TaskInfo; focused?: boolean }) {
   const [editing, setEditing] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView?.({ block: 'start' });
+  }, [focused]);
   const qc = useQueryClient();
   const remove = useMutation({
     mutationFn: () => api('DELETE', `/api/tasks/${task.taskId}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
   });
   return (
+    <div ref={ref} data-task={task.taskId} className={focused ? 'rounded-lg ring-2 ring-brand' : undefined}>
     <Card>
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -65,6 +72,7 @@ function TaskCard({ task }: { task: TaskInfo }) {
       <ErrorText error={remove.error} />
       {editing && <TaskEditor task={task} onDone={() => setEditing(false)} />}
     </Card>
+    </div>
   );
 }
 

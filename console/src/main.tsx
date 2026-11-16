@@ -7,6 +7,7 @@ import { AccountPage } from './pages/account';
 import { AdaptersPage } from './pages/adapters';
 import { CreditsPage } from './pages/credits';
 import { HomePage } from './pages/home';
+import { HandoffPage } from './pages/handoff';
 import { LoginPage } from './pages/login';
 import { RecordDetailPage, RecordsPage } from './pages/records';
 import { TasksPage } from './pages/tasks';
@@ -21,6 +22,8 @@ import './index.css';
 
 const router = createHashRouter([
   { path: '/login', element: <LoginPage /> },
+  // 从扩展打开：不要求已登录，页面自己用交接码登录
+  { path: '/handoff', element: <HandoffPage /> },
   {
     element: <RequireAuth />,
     children: [
