@@ -136,3 +136,47 @@ describe('从扩展打开控制台（handoff）', () => {
     expect(safeTarget(null)).toBe('/');
   });
 });
+
+describe('handoff 页卸载与会话变化', () => {
+  beforeEach(() => sessionStorage.clear());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('换码期间离开页面：迟到的结果不再登录、不再跳转', async () => {
+    let resolve!: (r: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => (resolve = r))));
+    const router = createMemoryRouter(
+      [
+        { path: '/handoff', element: <HandoffPage /> },
+        { path: '/credits', element: <p>额度页</p> },
+        { path: '/other', element: <p>别的页</p> },
+      ],
+      { initialEntries: ['/handoff?code=EGH-test-code-late&to=/credits'] },
+    );
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <RouterProvider router={router} />
+      </QueryClientProvider>,
+    );
+    await router.navigate('/other');
+    expect(await screen.findByText('别的页')).toBeInTheDocument();
+    resolve(new Response(JSON.stringify({ token: 't-late', user: { id: 1, username: 'alice', role: 'user', credits: 0, createdAt: '' } }), { status: 200 }));
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.getByText('别的页')).toBeInTheDocument();
+    expect(session.token()).toBe('');
+  });
+
+  it('换码期间控制台退出了登录：不写入登录态，提示重新打开', async () => {
+    session.set('t-bob');
+    let resolve!: (r: Response) => void;
+    // 第一次是换码（先挂起），之后是查当前账号
+    const bob = { id: 2, username: 'bob', role: 'user', credits: 5, createdAt: '' };
+    vi.stubGlobal('fetch', vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((r) => (resolve = r)))
+      .mockImplementation(async () => new Response(JSON.stringify(bob), { status: 200 })));
+    renderAt('/handoff?code=EGH-test-code-gone&to=/credits');
+    session.clear();
+    resolve(new Response(JSON.stringify({ token: 't-alice', user: { id: 1, username: 'alice', role: 'user', credits: 0, createdAt: '' } }), { status: 200 }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('登录状态在这期间变了');
+    expect(session.token()).toBe('');
+  });
+});

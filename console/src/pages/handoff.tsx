@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { ApiError, session } from '../api/client';
 import type { User } from '../api/types';
@@ -37,8 +37,31 @@ async function currentUser(token: string): Promise<User | null> {
   return (await res.json()) as User;
 }
 
-/** 处理过的码：StrictMode 下 effect 会跑两次，码只能用一次，同一个码只换一回 */
-const handled = new Set<string>();
+type Outcome =
+  | { kind: 'switch'; next: { token: string; user: User } }
+  | { kind: 'conflict'; current: User; next: { token: string; user: User } };
+
+/**
+ * 每个码只换一次，结果按码共享：StrictMode 下 effect 会「挂载→卸载→再挂载」，
+ * 第二次挂载订阅同一个结果，不会因为第一次被取消而丢掉唯一的兑换结果。
+ * 记下开始时控制台的 token，写登录态前核对没变（期间退出或换了账号就作废）。
+ */
+const inflight = new Map<string, { startToken: string; result: Promise<Outcome> }>();
+
+function exchange(code: string) {
+  let entry = inflight.get(code);
+  if (!entry) {
+    const startToken = session.token();
+    const result = (async (): Promise<Outcome> => {
+      const next = await redeem(code);
+      const current = startToken ? await currentUser(startToken) : null;
+      return current && current.id !== next.user.id ? { kind: 'conflict', current, next } : { kind: 'switch', next };
+    })();
+    entry = { startToken, result };
+    inflight.set(code, entry);
+  }
+  return entry;
+}
 
 type State =
   | { kind: 'loading' }
@@ -54,8 +77,6 @@ export function HandoffPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [state, setState] = useState<State>({ kind: 'loading' });
-  // 每个新的交接地址开始处理时 +1；旧请求回来时发现代数变了就作废
-  const generation = useRef(0);
   const code = params.get('code') ?? '';
   const to = safeTarget(params.get('to'));
 
@@ -66,29 +87,31 @@ export function HandoffPage() {
     navigate(target, { replace: true });
   };
 
-  // 扩展复用已开的控制台标签页时只改 hash，这个页面会被复用：按每个新的码重新处理
+  // 扩展复用已开的控制台标签页时只改 hash，这个页面会被复用：按每个新的码重新处理。
+  // 卸载或换了新码时 cancelled 置位，旧结果不再改状态、不再跳转或登录。
   useEffect(() => {
     if (!code) {
-      if (generation.current === 0) setState({ kind: 'error', message: '链接里没有交接码', to });
+      setState((s) => (s.kind === 'loading' ? { kind: 'error', message: '链接里没有交接码', to } : s));
       return;
     }
     // 换码之前先把码从地址栏和历史里去掉
     history.replaceState(null, '', `${location.pathname}${location.search}#/handoff`);
-    if (handled.has(code)) return;
-    handled.add(code);
-    const gen = ++generation.current;
-    const stillCurrent = () => gen === generation.current;
+    let cancelled = false;
     setState({ kind: 'loading' });
-    (async () => {
-      const next = await redeem(code);
-      const token = session.token();
-      const current = token ? await currentUser(token) : null;
-      if (!stillCurrent()) return;
-      if (current && current.id !== next.user.id) setState({ kind: 'conflict', current, next, to });
-      else finish(next.token, next.user, to);
-    })().catch((e: unknown) => {
-      if (stillCurrent()) setState({ kind: 'error', message: e instanceof Error ? e.message : String(e), to });
-    });
+    const { startToken, result } = exchange(code);
+    result
+      .then((r) => {
+        if (cancelled) return;
+        if (session.token() !== startToken) throw new Error('控制台的登录状态在这期间变了，请从扩展重新打开');
+        if (r.kind === 'conflict') setState({ kind: 'conflict', current: r.current, next: r.next, to });
+        else finish(r.next.token, r.next.user, to);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setState({ kind: 'error', message: e instanceof Error ? e.message : String(e), to });
+      });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, to]);
 

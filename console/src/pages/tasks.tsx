@@ -29,7 +29,9 @@ export function TasksPage() {
     queryFn: () => api<TaskInfo>('GET', `/api/tasks/${focusId}`),
     enabled: missing,
   });
-  const list = tasks.data ? (missing && extra.data ? [extra.data, ...tasks.data] : tasks.data) : undefined;
+  // 刷新失败（比如刚被删掉）时不再展示旧数据
+  const extraTask = missing && extra.data && !extra.isError ? extra.data : null;
+  const list = tasks.data ? (extraTask ? [extraTask, ...tasks.data] : tasks.data) : undefined;
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">阅卷任务</h1>
@@ -55,7 +57,11 @@ function TaskCard({ task, focused = false }: { task: TaskInfo; focused?: boolean
   const qc = useQueryClient();
   const remove = useMutation({
     mutationFn: () => api('DELETE', `/api/tasks/${task.taskId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: () => {
+      // 单独取来的题也重新取：删掉后会 404，页面就不再把旧数据插回列表
+      qc.invalidateQueries({ queryKey: ['task', task.taskId] });
+      return qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
   });
   return (
     <div ref={ref} data-task={task.taskId} className={focused ? 'rounded-lg ring-2 ring-brand' : undefined}>
@@ -93,6 +99,7 @@ function TaskEditor({ task, onDone }: { task: TaskInfo; onDone: () => void }) {
     mutationFn: (body: unknown) => api('PUT', '/api/tasks', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task', task.taskId] });
       onDone();
     },
   });

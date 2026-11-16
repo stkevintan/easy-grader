@@ -59,8 +59,24 @@ export class JudgeService {
     return t;
   }
 
-  async getTask(userId: number, id: number): Promise<TaskInfo> {
-    return toTaskInfo(await this.taskEntity(userId, id));
+  /** 单题也带上和列表一样的统计（已评、已确认），控制台定位到最近 200 题以外的题时要用 */
+  async getTask(userId: number, id: number): Promise<TaskInfo & { judged: number; confirmed: number }> {
+    const t = await this.taskEntity(userId, id);
+    const c = (await this.judgeCounts(userId, [t.id])).get(t.id);
+    return { ...toTaskInfo(t), judged: c?.judged ?? 0, confirmed: c?.confirmed ?? 0 };
+  }
+
+  /** 每题成功评分数和已确认数；taskIds 不传则统计该用户全部任务 */
+  private async judgeCounts(userId: number, taskIds?: number[]) {
+    const qb = this.records
+      .createQueryBuilder('r')
+      .select('r.taskId', 'taskId')
+      .addSelect('COUNT(*)', 'total')
+      .addSelect('SUM(CASE WHEN r.confirmedAt IS NOT NULL THEN 1 ELSE 0 END)', 'confirmed')
+      .where('r.userId = :userId AND r.status = :s', { userId, s: 'done' });
+    if (taskIds) qb.andWhere('r.taskId IN (:...taskIds)', { taskIds });
+    const rows = await qb.groupBy('r.taskId').getRawMany<{ taskId: number; total: number; confirmed: number }>();
+    return new Map(rows.map((c) => [Number(c.taskId), { judged: Number(c.total), confirmed: Number(c.confirmed ?? 0) }]));
   }
 
   /** 平台 + 考试 + 题号相同则更新，否则新建 */
@@ -88,19 +104,11 @@ export class JudgeService {
 
   async listTasks(userId: number) {
     const rows = await this.tasks.find({ where: { userId }, order: { updatedAt: 'DESC' }, take: 200 });
-    const counts = await this.records
-      .createQueryBuilder('r')
-      .select('r.taskId', 'taskId')
-      .addSelect('COUNT(*)', 'total')
-      .addSelect('SUM(CASE WHEN r.confirmedAt IS NOT NULL THEN 1 ELSE 0 END)', 'confirmed')
-      .where('r.userId = :userId AND r.status = :s', { userId, s: 'done' })
-      .groupBy('r.taskId')
-      .getRawMany<{ taskId: number; total: number; confirmed: number }>();
-    const byId = new Map(counts.map((c) => [Number(c.taskId), c]));
+    const byId = await this.judgeCounts(userId);
     return rows.map((t) => ({
       ...toTaskInfo(t),
-      judged: Number(byId.get(t.id)?.total ?? 0),
-      confirmed: Number(byId.get(t.id)?.confirmed ?? 0),
+      judged: byId.get(t.id)?.judged ?? 0,
+      confirmed: byId.get(t.id)?.confirmed ?? 0,
     }));
   }
 

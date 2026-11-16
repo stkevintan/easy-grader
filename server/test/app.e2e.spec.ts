@@ -249,6 +249,9 @@ describe('Easy Grader server (e2e)', () => {
     await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: 5, isAuto: false }).expect(200);
     const tasks = await http.get('/api/tasks').set(auth(userToken)).expect(200);
     expect(tasks.body.find((t: any) => t.taskId === taskId)).toMatchObject({ judged: 3, confirmed: 1 });
+    // 单题接口带同样的统计
+    const one = await http.get(`/api/tasks/${taskId}`).set(auth(userToken)).expect(200);
+    expect(one.body).toMatchObject({ taskId, judged: 3, confirmed: 1 });
   });
 
   it('评分记录详情只能看自己的；个人用量统计按天汇总', async () => {
