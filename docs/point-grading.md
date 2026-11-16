@@ -127,7 +127,7 @@ interface Rubric {
   - 记录**没有 `rubricSnapshot`**（旧记录、没有要点列表的题）：保持现在的校验，只要求 0 到满分，不加步长约束。例如步长 1、满分 6 的旧任务仍然可以确认 2.5 分。
 - `isAuto: true` 时，服务端除了现在的开关和置信度校验，对**带 `aiPoints`** 的记录还要看逐点结果（没有 `aiPoints` 的记录只走现在的校验）：只要有一点 `verified` 为 false（引用没通过）或 `disagree` 为 true（多次采样不一致），就返回 403「这份有要点需要老师确认」。这条在服务端判断，所以不认识新字段的旧扩展在全自动下也会停下。
 
-`GradingInfo` 新增字段：`points`（AI 的逐点结果）和 `rubric`（取自这条记录的 `rubricSnapshot`，包括分值、`allowPartial` 和汇总规则）。扩展拿到这两项就能画出逐点打分界面。
+`GradingInfo` 新增字段：`points`（AI 的逐点结果，即 `aiPoints`）、`finalPoints`（老师确认的逐点得分，没确认或只改了总分时为 null）和 `rubric`（取自这条记录的 `rubricSnapshot`，包括分值、`allowPartial` 和汇总规则）。老师的评分记录列表、记录详情（`GET /api/records/:id`）和管理端记录接口都返回这三项，控制台据此逐点对比 AI 和老师的得分、高亮改过的点；`finalPoints` 为 null 而总分和 AI 不同时，显示为「只改了总分」。扩展拿到这两项就能画出逐点打分界面。
 
 ## 6. 面板交互
 
