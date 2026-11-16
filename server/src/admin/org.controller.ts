@@ -1,6 +1,9 @@
 import { BadRequestException, Body, Controller, Get, NotFoundException, Param, ParseIntPipe, Patch, Post } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsBoolean, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { IsBoolean, IsString, Length, MaxLength, ValidateIf } from 'class-validator';
+
+/** 字段可以不传，但一旦出现就必须校验（显式 null 会被拒，不像 @IsOptional 那样放行） */
+const Optional = () => ValidateIf((_, value) => value !== undefined);
 import { DataSource, Not, Repository } from 'typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { AdminOnly } from '../common/auth.guard';
@@ -8,13 +11,13 @@ import { Org, User } from '../entities';
 
 class CreateOrgDto {
   @IsString() @Length(1, 100) name!: string;
-  @IsOptional() @IsString() @MaxLength(500) description?: string;
+  @Optional() @IsString() @MaxLength(500) description?: string;
 }
 
 class UpdateOrgDto {
-  @IsOptional() @IsString() @Length(1, 100) name?: string;
-  @IsOptional() @IsString() @MaxLength(500) description?: string;
-  @IsOptional() @IsBoolean() enabled?: boolean;
+  @Optional() @IsString() @Length(1, 100) name?: string;
+  @Optional() @IsString() @MaxLength(500) description?: string;
+  @Optional() @IsBoolean() enabled?: boolean;
 }
 
 /** 组织：只是分组。系统管理员建、改名、停用，并查看成员和用量 */

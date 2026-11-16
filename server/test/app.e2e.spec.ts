@@ -354,6 +354,11 @@ describe('Easy Grader server (e2e)', () => {
     const other = await http.post('/api/admin/orgs').set(ah).send({ name: '二中', description: '备用' }).expect(201);
     await http.patch(`/api/admin/orgs/${other.body.id}`).set(ah).send({ name: '测试邀请单元' }).expect(400);
     await http.patch(`/api/admin/orgs/${other.body.id}`).set(ah).send({ name: '第二中学' }).expect(200);
+    // 显式 null 按校验失败处理（400），不是 500
+    for (const body of [{ name: null }, { description: null }, { enabled: null }]) {
+      await http.patch(`/api/admin/orgs/${other.body.id}`).set(ah).send(body).expect(400);
+    }
+    await http.post('/api/admin/orgs').set(ah).send({ name: '三中', description: null }).expect(400);
 
     // 成员和用量；/api/auth/me 带上组织
     const members = await http.get(`/api/admin/orgs/${school.id}/members`).set(ah).expect(200);
