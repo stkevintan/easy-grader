@@ -6,6 +6,27 @@ export interface User {
   role: string;
   credits: number;
   createdAt: string;
+  /** 所属组织；没有组织时为 null */
+  org?: { id: number; name: string } | null;
+}
+
+export interface AdminOrg {
+  id: number;
+  name: string;
+  description: string;
+  enabled: boolean;
+  memberCount: number;
+  createdAt: string;
+}
+
+export interface OrgMember {
+  id: number;
+  username: string;
+  role: 'user' | 'admin';
+  credits: number;
+  disabled: boolean;
+  judged: number;
+  lastJudgeAt: string | null;
 }
 
 export interface TaskInfo {
@@ -98,6 +119,7 @@ export interface AdminUser {
   role: 'user' | 'admin';
   credits: number;
   disabled: boolean;
+  org: { id: number; name: string } | null;
   lastLoginAt: string | null;
   judged: number;
   lastJudgeAt: string | null;
@@ -118,7 +140,7 @@ export interface AdminCode {
 
 export interface AdminInvite {
   id: number;
-  unitId: number;
+  orgId: number | null;
   usedCount: number;
   maxUses: number;
   disabled: boolean;
@@ -172,7 +194,7 @@ export interface AdminStats {
 }
 
 export interface FlagOverride {
-  scope: 'global' | 'rollout' | 'unit' | 'user';
+  scope: 'global' | 'rollout' | 'org' | 'user';
   targetId: number;
   targetName: string;
   value: unknown;

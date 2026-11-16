@@ -2,6 +2,7 @@ import { NavLink, Navigate, Outlet, useNavigate } from 'react-router';
 import {
   BarChart3,
   BookOpen,
+  Building2,
   Coins,
   FileText,
   Gift,
@@ -39,6 +40,7 @@ const MINE: NavItem[] = [
 const ADMIN: NavItem[] = [
   { to: '/admin', label: '概览', icon: BarChart3 },
   { to: '/admin/users', label: '用户', icon: Users },
+  { to: '/admin/orgs', label: '组织', icon: Building2 },
   { to: '/admin/codes', label: '兑换码', icon: Gift },
   { to: '/admin/invites', label: '邀请令牌', icon: Mail },
   { to: '/admin/records', label: '评分记录', icon: FileText },

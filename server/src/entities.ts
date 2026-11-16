@@ -10,7 +10,6 @@ import type { AdapterConfig } from './adapters/adapter-config';
 import type { ExamInfo, MajorInput, QuestionInfo } from './judge/task-info';
 
 export type Role = 'user' | 'admin';
-export type UnitRole = 'owner' | 'manager' | 'grader' | 'viewer';
 
 @Entity('users')
 export class User {
@@ -22,31 +21,25 @@ export class User {
   @Column({ type: 'boolean', default: false }) disabled!: boolean;
   /** 改密码/禁用时 +1，使旧 JWT 失效 */
   @Column({ type: 'integer', default: 0 }) tokenVersion!: number;
+  /** 所属组织；一个老师最多属于一个组织，null 表示没有组织 */
+  @Column({ type: 'integer', nullable: true }) orgId!: number | null;
   @CreateDateColumn() createdAt!: Date;
   @Column({ type: 'datetime', nullable: true }) lastLoginAt!: Date | null;
 }
 
-/** 组织/管理单元；数据默认按 unitId 隔离 */
-@Entity('management_units')
+/**
+ * 组织：只是分组，由系统管理员维护。组里的人没有额外权限，数据也不按组织隔离。
+ * 用途是按学校发邀请、设功能开关、筛选统计。
+ */
+@Entity('orgs')
 @Index(['name'], { unique: true })
-export class ManagementUnit {
+export class Org {
   @PrimaryGeneratedColumn() id!: number;
   @Column({ type: 'varchar', length: 100 }) name!: string;
   @Column({ type: 'varchar', default: '' }) description!: string;
-  @Column({ type: 'integer' }) ownerId!: number;
   @Column({ type: 'boolean', default: true }) enabled!: boolean;
   @CreateDateColumn() createdAt!: Date;
   @UpdateDateColumn() updatedAt!: Date;
-}
-
-@Entity('unit_memberships')
-@Index(['unitId', 'userId'], { unique: true })
-export class UnitMembership {
-  @PrimaryGeneratedColumn() id!: number;
-  @Column({ type: 'integer' }) unitId!: number;
-  @Column({ type: 'integer' }) userId!: number;
-  @Column({ type: 'varchar', default: 'grader' }) role!: UnitRole;
-  @CreateDateColumn() createdAt!: Date;
 }
 
 export type LedgerReason = 'register' | 'redeem' | 'judge' | 'refund' | 'admin';
@@ -83,7 +76,8 @@ export class RedeemCode {
 export class InviteToken {
   @PrimaryGeneratedColumn() id!: number;
   @Column({ type: 'varchar', length: 64 }) tokenHash!: string;
-  @Column({ type: 'integer' }) unitId!: number;
+  /** 注册后自动加入的组织；null 表示不加入任何组织 */
+  @Column({ type: 'integer', nullable: true }) orgId!: number | null;
   @Column({ type: 'integer', default: 0 }) credits!: number;
   @Column({ type: 'integer', default: 10 }) maxUses!: number;
   @Column({ type: 'integer', default: 0 }) usedCount!: number;
@@ -188,11 +182,11 @@ export class AdapterPreset {
  * 功能开关的取值覆盖。开关本身在代码里定义（flags/flag-definitions.ts），这里只存改过的值。
  *   global  全局取值，替代代码里的默认值（targetId=0）
  *   rollout 百分比放量：按 key+userId 哈希落在 percent 以内的用户取 value（targetId=0）
- *   unit    某个管理单元（targetId=unitId）
+ *   org     某个组织（targetId=orgId）
  *   user    某个用户（targetId=userId）
- * 取值优先级：user > unit > rollout > global > 代码默认值
+ * 取值优先级：user > org > rollout > global > 代码默认值
  */
-export type FlagScope = 'global' | 'rollout' | 'unit' | 'user';
+export type FlagScope = 'global' | 'rollout' | 'org' | 'user';
 export type FlagSnapshot = { value: boolean | number | string; percent: number | null };
 
 @Entity('feature_flag_overrides')
@@ -201,7 +195,7 @@ export class FeatureFlagOverride {
   @PrimaryGeneratedColumn() id!: number;
   @Column({ type: 'varchar', length: 64 }) flagKey!: string;
   @Column({ type: 'varchar' }) scope!: FlagScope;
-  /** unit / user 时是对应 id；global / rollout 为 0（SQLite 唯一索引里 NULL 互不相等，所以不用 NULL） */
+  /** org / user 时是对应 id；global / rollout 为 0（SQLite 唯一索引里 NULL 互不相等，所以不用 NULL） */
   @Column({ type: 'integer', default: 0 }) targetId!: number;
   @Column({ type: 'simple-json' }) value!: boolean | number | string;
   /** 仅 rollout：0-100 */
@@ -235,8 +229,7 @@ export const ENTITIES = [
   GradingTask,
   JudgeRecord,
   AdapterPreset,
-  ManagementUnit,
-  UnitMembership,
+  Org,
   FeatureFlagOverride,
   FeatureFlagAudit,
 ];

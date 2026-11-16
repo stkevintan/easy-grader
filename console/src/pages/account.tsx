@@ -36,6 +36,7 @@ export function AccountPage() {
         <dl className="grid grid-cols-2 gap-y-2 text-sm">
           <dt className="text-slate-500">用户名</dt><dd>{me.data?.username ?? '…'}</dd>
           <dt className="text-slate-500">角色</dt><dd>{me.data?.role === 'admin' ? '系统管理员' : '老师'}</dd>
+          <dt className="text-slate-500">所属组织</dt><dd>{me.data ? me.data.org?.name ?? '无' : '…'}</dd>
           <dt className="text-slate-500">注册时间</dt><dd>{me.data ? new Date(me.data.createdAt).toLocaleDateString() : '…'}</dd>
         </dl>
       </Card>

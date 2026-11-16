@@ -50,7 +50,7 @@
 
 ### `POST /api/auth/register`
 
-注册必须携带邀请令牌；令牌由管理员创建，注册后用户自动加入令牌所属的管理单元。
+注册必须携带邀请令牌；令牌由管理员创建，注册后用户自动加入令牌所属的组织（令牌没有组织时则不加入任何组织）。
 
 ```json
 {
@@ -94,7 +94,7 @@
 返回当前用户：
 
 ```json
-{ "id": 2, "username": "e2e_teacher", "role": "user", "credits": 18, "createdAt": "..." }
+{ "id": 2, "username": "e2e_teacher", "role": "user", "credits": 18, "createdAt": "...", "org": { "id": 1, "name": "一中" } }
 ```
 
 ### `POST /api/auth/password`
@@ -410,7 +410,9 @@
 
 以下接口均要求 `role = admin`。
 
-### `GET /api/admin/stats`
+### `GET /api/admin/stats?orgId=`
+
+`orgId` 给出时只统计该组织的成员。
 
 ```json
 {
@@ -433,9 +435,9 @@
 
 | 方法/路径 | 说明 |
 | --- | --- |
-| `GET /api/admin/users?page=&pageSize=&q=` | 用户列表，含 `disabled`、`lastLoginAt`、`judged`、`lastJudgeAt` |
+| `GET /api/admin/users?page=&pageSize=&q=&orgId=` | 用户列表，含 `disabled`、`org`、`lastLoginAt`、`judged`、`lastJudgeAt`；`orgId` 按组织筛选 |
 | `POST /api/admin/users` | 创建用户：`{ username, password, role?, credits? }` |
-| `PATCH /api/admin/users/:id` | `{ role?, disabled?, password? }` |
+| `PATCH /api/admin/users/:id` | `{ role?, disabled?, password?, orgId? }`；`orgId` 为 `null` 时移出组织 |
 | `POST /api/admin/users/:id/credits` | 调整额度：`{ delta, note? }`，返回 `{ balance }` |
 
 管理员不能停用或降级自己。
@@ -457,24 +459,21 @@
 | 方法/路径 | 说明 |
 | --- | --- |
 | `GET /api/admin/invites?page=&pageSize=&q=` | 列表；只返回 `tokenHash`，不返回明文 |
-| `POST /api/admin/invites` | `{ unitId, credits, expiresAt, count?, maxUses?, note? }`，返回 `{ tokens: [{ id, token }] }`，明文只出现这一次 |
+| `POST /api/admin/invites` | `{ credits, expiresAt, orgId?, count?, maxUses?, note? }`，返回 `{ tokens: [{ id, token }] }`，明文只出现这一次；`orgId` 缺省表示不加入任何组织 |
 | `PATCH /api/admin/invites/:id` | `{ disabled }` |
 
-### 管理单元
+### 组织
+
+组织只是分组，由系统管理员维护；组织里的人没有额外权限，数据也不按组织隔离。
 
 | 方法/路径 | 说明 |
 | --- | --- |
-| `GET /api/admin/units` | 单元列表，含 `memberCount` |
-| `POST /api/admin/units` | `{ name, description? }`；创建者自动成为 `owner` |
-| `PATCH /api/admin/units/:id` | `{ name?, description?, enabled? }` |
-| `GET /api/admin/units/:id/members` | 成员列表；要求调用者是该单元 `owner`/`manager` |
-| `POST /api/admin/units/:id/members` | `{ username, role }`；已存在则更新角色 |
-| `PATCH /api/admin/units/:unitId/members/:userId` | `{ username, role }` |
-| `DELETE /api/admin/units/:unitId/members/:userId` | 移除成员 |
+| `GET /api/admin/orgs` | 组织列表，含 `memberCount` |
+| `POST /api/admin/orgs` | `{ name, description? }` |
+| `PATCH /api/admin/orgs/:id` | `{ name?, description?, enabled? }`；停用后它的邀请不能再用、组织级开关不再生效 |
+| `GET /api/admin/orgs/:id/members` | 成员及各自用量：`{ id, username, role, credits, disabled, judged, lastJudgeAt }` |
 
-`role` 取值：`owner` / `manager` / `grader` / `viewer`。
-
-### `GET /api/admin/records?page=&pageSize=&q=&userId=`
+### `GET /api/admin/records?page=&pageSize=&q=&userId=&orgId=`
 
 管理端评分记录列表，字段为内部列名：
 
@@ -504,7 +503,7 @@
 | `GET /api/admin/flags/evaluate/:userId` | 某个用户每个开关的最终取值和来源：`{ key: { value, source, targetId? } }` |
 | `GET /api/admin/flags-audit?key=&page=&pageSize=` | 修改记录，新的在前 |
 
-`scope`：`global`（替代默认值）、`rollout`（按比例，需 `percent` 0–100）、`unit`（`targetId` 为单位 id）、`user`（`targetId` 为用户 id）。`value` 的类型必须和开关定义一致，并通过开关自己的校验（比如 `model_profile` 只能是已配置的方案）。
+`scope`：`global`（替代默认值）、`rollout`（按比例，需 `percent` 0–100）、`org`（`targetId` 为组织 id）、`user`（`targetId` 为用户 id）。`value` 的类型必须和开关定义一致，并通过开关自己的校验（比如 `model_profile` 只能是已配置的方案）。
 
 ### 适配预设
 

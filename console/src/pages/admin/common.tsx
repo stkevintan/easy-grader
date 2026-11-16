@@ -1,4 +1,6 @@
+import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState, type ReactNode } from 'react';
+import { api } from '../../api/client';
 import { Empty, ErrorText, Input, Pager, cn } from '../../ui';
 
 export const qs = (o: Record<string, string | number | undefined | null>) =>
@@ -152,5 +154,26 @@ export function CopyList({ label, lines, copy = lines }: { label: string; lines:
         {copied ? '已复制' : '复制全部'}
       </button>
     </div>
+  );
+}
+
+/** 组织下拉：全部 / 各组织。供用户、记录、概览按组织筛选 */
+export function OrgFilter({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const orgs = useQuery({
+    queryKey: ['admin-orgs'],
+    queryFn: () => api<{ id: number; name: string }[]>('GET', '/api/admin/orgs'),
+  });
+  return (
+    <select
+      aria-label="按组织筛选"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="rounded-md border border-slate-300 px-3 py-1.5 text-sm dark:border-slate-600 dark:bg-slate-800"
+    >
+      <option value="">全部组织</option>
+      {orgs.data?.map((o) => (
+        <option key={o.id} value={String(o.id)}>{o.name}</option>
+      ))}
+    </select>
   );
 }

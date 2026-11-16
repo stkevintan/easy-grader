@@ -83,14 +83,14 @@ describe('Easy Grader server (e2e)', () => {
 
   it('注册赠送额度，用户名唯一，校验密码长度', async () => {
     await http.post('/api/auth/register').send({ username: 'teacher', password: 'short', inviteToken: 'invalid-token' }).expect(400);
-    const unit = await http.post('/api/admin/units').set(auth(adminToken)).send({ name: '测试邀请单元' }).expect(201);
-    const invite = await http.post('/api/admin/invites').set(auth(adminToken)).send({ unitId: unit.body.id, count: 1, maxUses: 1, credits: 3, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const unit = await http.post('/api/admin/orgs').set(auth(adminToken)).send({ name: '测试邀请单元' }).expect(201);
+    const invite = await http.post('/api/admin/invites').set(auth(adminToken)).send({ orgId: unit.body.id, count: 1, maxUses: 1, credits: 3, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const r = await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     userToken = r.body.token;
     userId = r.body.user.id;
     expect(r.body.user.credits).toBe(3);
     await http.post('/api/auth/register').send({ username: 'teacher', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(409);
-    const invite2 = await http.post('/api/admin/invites').set(auth(adminToken)).send({ unitId: unit.body.id, count: 1, maxUses: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const invite2 = await http.post('/api/admin/invites').set(auth(adminToken)).send({ orgId: unit.body.id, count: 1, maxUses: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     await http.post('/api/auth/register').send({ username: '王老师', password: 'password-123', inviteToken: invite2.body.tokens[0].token }).expect(201);
   });
 
@@ -340,6 +340,67 @@ describe('Easy Grader server (e2e)', () => {
     expect(o.body.preset?.name).toBe('mine');
   });
 
+  it('组织：邀请注册后自动加入；成员与用量；按组织筛选；改用户组织；停用后邀请失效；不带组织的邀请', async () => {
+    const ah = auth(adminToken);
+    // 前面的用例改过 teacher 的密码，重新登录拿 token
+    const teacherToken = (await http.post('/api/auth/login').send({ username: 'teacher', password: 'password-456' }).expect(200)).body.token;
+    const orgs = await http.get('/api/admin/orgs').set(ah).expect(200);
+    const school = orgs.body.find((o: { name: string }) => o.name === '测试邀请单元');
+    expect(school).toMatchObject({ enabled: true, memberCount: 2 });
+    // 普通用户不能管理组织
+    await http.get('/api/admin/orgs').set(auth(teacherToken)).expect(403);
+    // 名称唯一，可以改名
+    await http.post('/api/admin/orgs').set(ah).send({ name: '测试邀请单元' }).expect(400);
+    const other = await http.post('/api/admin/orgs').set(ah).send({ name: '二中', description: '备用' }).expect(201);
+    await http.patch(`/api/admin/orgs/${other.body.id}`).set(ah).send({ name: '测试邀请单元' }).expect(400);
+    await http.patch(`/api/admin/orgs/${other.body.id}`).set(ah).send({ name: '第二中学' }).expect(200);
+
+    // 成员和用量；/api/auth/me 带上组织
+    const members = await http.get(`/api/admin/orgs/${school.id}/members`).set(ah).expect(200);
+    expect(members.body.map((m: { username: string }) => m.username).sort()).toEqual(['teacher', '王老师']);
+    expect(members.body.find((m: { username: string }) => m.username === 'teacher').judged).toBe(3);
+    const me = await http.get('/api/auth/me').set(auth(teacherToken)).expect(200);
+    expect(me.body.org).toEqual({ id: school.id, name: '测试邀请单元' });
+
+    // 按组织筛选用户、记录、统计
+    const users = await http.get('/api/admin/users').query({ orgId: school.id }).set(ah).expect(200);
+    expect(users.body.total).toBe(2);
+    expect(users.body.items[0].org).toEqual({ id: school.id, name: '测试邀请单元' });
+    const recs = await http.get('/api/admin/records').query({ orgId: school.id }).set(ah).expect(200);
+    expect(recs.body.total).toBe(3);
+    const s = await http.get('/api/admin/stats').query({ orgId: school.id }).set(ah).expect(200);
+    expect(s.body).toMatchObject({ users: 2, records: 3 });
+    const s2 = await http.get('/api/admin/stats').query({ orgId: other.body.id }).set(ah).expect(200);
+    expect(s2.body).toMatchObject({ users: 0, records: 0, tasks: 0, creditsOutstanding: 0 });
+    expect(s2.body.daily).toEqual([]);
+
+    // 改用户的组织、移出组织
+    const wang = members.body.find((m: { username: string }) => m.username === '王老师');
+    await http.patch(`/api/admin/users/${wang.id}`).set(ah).send({ orgId: 99999 }).expect(400);
+    await http.patch(`/api/admin/users/${wang.id}`).set(ah).send({ orgId: other.body.id }).expect(200);
+    expect((await http.get(`/api/admin/orgs/${other.body.id}/members`).set(ah)).body).toHaveLength(1);
+    const out = await http.patch(`/api/admin/users/${wang.id}`).set(ah).send({ orgId: null }).expect(200);
+    expect(out.body.orgId).toBeNull();
+
+    // 停用组织：它的邀请不能再用，已有成员的账号不受影响
+    const inv = await http.post('/api/admin/invites').set(ah).send({ orgId: other.body.id, count: 1, credits: 1, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    await http.patch(`/api/admin/orgs/${other.body.id}`).set(ah).send({ enabled: false }).expect(200);
+    const denied = await http.post('/api/auth/register').send({ username: 'org_off', password: 'password-123', inviteToken: inv.body.tokens[0].token }).expect(400);
+    expect(denied.body.message).toContain('组织已停用');
+    await http.post('/api/admin/invites').set(ah).send({ orgId: other.body.id, count: 1, credits: 1, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(400);
+
+    // 不属于任何组织的邀请
+    const free = await http.post('/api/admin/invites').set(ah).send({ count: 1, credits: 1, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const reg = await http.post('/api/auth/register').send({ username: 'no_org', password: 'password-123', inviteToken: free.body.tokens[0].token }).expect(201);
+    expect((await http.get('/api/auth/me').set(auth(reg.body.token))).body.org).toBeNull();
+    // 旧的单元接口已删除
+    await http.get('/api/admin/units').set(ah).expect(404);
+    // 邀请列表里能看到组织
+    const invites = await http.get('/api/admin/invites').set(ah).expect(200);
+    expect(invites.body.items.find((x: { id: number }) => x.id === free.body.tokens[0].id).orgId).toBeNull();
+    expect(invites.body.items.find((x: { id: number }) => x.id === inv.body.tokens[0].id).orgId).toBe(other.body.id);
+  });
+
   it('删除任务连带删除记录', async () => {
     const r = await http.post('/api/auth/login').send({ username: 'teacher', password: 'password-456' }).expect(200);
     await http.delete(`/api/tasks/${taskId}`).set(auth(r.body.token)).expect(200);
@@ -368,8 +429,8 @@ describe('模型失败时退还次数', () => {
     await app.init();
     const http = request(app.getHttpServer());
     const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
-    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
-    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const unit = await http.post('/api/admin/orgs').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ orgId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'user1', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http.put('/api/tasks').set(h).send({ platformHost: 'x', exam: { exam: 'e', subject: '语文', q_index: '1' }, question: { type: '其他', content: { score: 5 } } }).expect(200);
@@ -460,8 +521,8 @@ describe('OpenAI 兼容模型接入', () => {
   it('请求格式正确；解析代码块里的 JSON；分数按步长取整；上游失败退还次数', async () => {
     const http = request(app.getHttpServer());
     const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
-    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
-    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const unit = await http.post('/api/admin/orgs').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ orgId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'model_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http
@@ -553,8 +614,8 @@ describe('OpenAI 兼容模型接入', () => {
   it('自动学习：老师确认的分数进入后续提示词，自动提交的不算示例', async () => {
     const http = request(app.getHttpServer());
     const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
-    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
-    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const unit = await http.post('/api/admin/orgs').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ orgId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'gold_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http
@@ -602,8 +663,8 @@ describe('OpenAI 兼容模型接入', () => {
   it('空白答卷：只调用一次转录，直接 0 分', async () => {
     const http = request(app.getHttpServer());
     const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
-    const unit = await http.post('/api/admin/units').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
-    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const unit = await http.post('/api/admin/orgs').set({ authorization: `Bearer ${admin.body.token}` }).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set({ authorization: `Bearer ${admin.body.token}` }).send({ orgId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'blank_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http
@@ -629,8 +690,8 @@ describe('OpenAI 兼容模型接入', () => {
     const http = request(app.getHttpServer());
     const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
     const ah = { authorization: `Bearer ${admin.body.token}` };
-    const unit = await http.post('/api/admin/units').set(ah).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
-    const invite = await http.post('/api/admin/invites').set(ah).send({ unitId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+    const unit = await http.post('/api/admin/orgs').set(ah).send({ name: `测试单元-${Date.now()}-${Math.random()}` }).expect(201);
+    const invite = await http.post('/api/admin/invites').set(ah).send({ orgId: unit.body.id, count: 1, credits: 20, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const reg = await http.post('/api/auth/register').send({ username: 'profile_user', password: 'password-123', inviteToken: invite.body.tokens[0].token }).expect(201);
     const h = { authorization: `Bearer ${reg.body.token}` };
     const t = await http
@@ -681,11 +742,11 @@ describe('功能开关', () => {
   });
   afterAll(() => app?.close());
 
-  async function newUser(name: string, unitId?: number) {
-    const uid = unitId ?? (await http.post('/api/admin/units').set(ah).send({ name: `u-${name}` }).expect(201)).body.id;
-    const inv = await http.post('/api/admin/invites').set(ah).send({ unitId: uid, count: 1, credits: 5, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
+  async function newUser(name: string, orgId?: number) {
+    const uid = orgId ?? (await http.post('/api/admin/orgs').set(ah).send({ name: `u-${name}` }).expect(201)).body.id;
+    const inv = await http.post('/api/admin/invites').set(ah).send({ orgId: uid, count: 1, credits: 5, expiresAt: new Date(Date.now() + 86400000).toISOString() }).expect(201);
     const r = await http.post('/api/auth/register').send({ username: name, password: 'password-123', inviteToken: inv.body.tokens[0].token }).expect(201);
-    return { id: r.body.user.id as number, unitId: uid as number, h: { authorization: `Bearer ${r.body.token}` } };
+    return { id: r.body.user.id as number, orgId: uid as number, h: { authorization: `Bearer ${r.body.token}` } };
   }
 
   it('默认值下发给扩展；普通用户不能改开关', async () => {
@@ -696,19 +757,19 @@ describe('功能开关', () => {
     await http.get('/api/flags').expect(401);
   });
 
-  it('优先级 user > unit > rollout > global > 默认；类型和取值都要校验；改动有审计', async () => {
+  it('优先级 user > org > rollout > global > 默认；类型和取值都要校验；改动有审计', async () => {
     const a = await newUser('flag_a');
-    const b = await newUser('flag_b', a.unitId);
+    const b = await newUser('flag_b', a.orgId);
     const c = await newUser('flag_c');
     const put = (body: object, code = 200) => http.put('/api/admin/flags/auto_min_confidence').set(ah).send(body).expect(code);
     await put({ scope: 'global', value: 'x' }, 400);
     await put({ scope: 'global', value: 1.5 }, 400);
-    await put({ scope: 'unit', value: 0.8 }, 400); // 缺 targetId
-    await put({ scope: 'unit', targetId: 99999, value: 0.8 }, 400);
+    await put({ scope: 'org', value: 0.8 }, 400); // 缺 targetId
+    await put({ scope: 'org', targetId: 99999, value: 0.8 }, 400);
     await http.put('/api/admin/flags/nope').set(ah).send({ scope: 'global', value: 1 }).expect(404);
 
     await put({ scope: 'global', value: 0.75 });
-    await put({ scope: 'unit', targetId: a.unitId, value: 0.8 });
+    await put({ scope: 'org', targetId: a.orgId, value: 0.8 });
     await put({ scope: 'user', username: 'no_such_user', value: 0.9 }, 400);
     await put({ scope: 'user', username: 'flag_a', value: 0.9 });
     const val = async (u: { h: { authorization: string } }) => (await http.get('/api/flags').set(u.h)).body.flags.auto_min_confidence;
@@ -716,7 +777,7 @@ describe('功能开关', () => {
     expect(await val(b)).toBe(0.8);
     expect(await val(c)).toBe(0.75);
 
-    // 百分比放量：100% 覆盖 global，0% 不生效；unit 仍然优先
+    // 百分比放量：100% 覆盖 global，0% 不生效；org 仍然优先
     await put({ scope: 'rollout', value: 0.85 }, 400); // 缺 percent
     await put({ scope: 'rollout', value: 0.85, percent: 100 });
     expect(await val(c)).toBe(0.85);
@@ -731,12 +792,12 @@ describe('功能开关', () => {
     const list = await http.get('/api/admin/flags').set(ah).expect(200);
     const def = list.body.flags.find((f: { key: string }) => f.key === 'auto_min_confidence');
     expect(def).toMatchObject({ type: 'number', default: 0.7, owner: expect.any(String), removeBy: expect.any(String) });
-    expect(def.overrides.map((o: { scope: string }) => o.scope).sort()).toEqual(['global', 'rollout', 'unit']);
-    expect(def.overrides.find((o: { scope: string }) => o.scope === 'unit').targetName).toBe('u-flag_a');
+    expect(def.overrides.map((o: { scope: string }) => o.scope).sort()).toEqual(['global', 'org', 'rollout']);
+    expect(def.overrides.find((o: { scope: string }) => o.scope === 'org').targetName).toBe('u-flag_a');
 
     const audit = await http.get('/api/admin/flags-audit').set(ah).query({ key: 'auto_min_confidence' }).expect(200);
     expect(audit.body.items[0]).toMatchObject({ scope: 'user', before: { value: 0.9, percent: null }, after: null, actorName: 'admin' });
-    expect(audit.body.total).toBe(6); // global、unit、user、rollout 两次、删除 user
+    expect(audit.body.total).toBe(6); // global、org、user、rollout 两次、删除 user
   });
 
   it('auto_mode 关闭后服务端拒绝全自动提交；手动提交不受影响；置信度低于下限也拒绝', async () => {
@@ -748,14 +809,14 @@ describe('功能开关', () => {
     const a = await judge('fa');
     await http.post(`/api/records/${a.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: true }).expect(200);
 
-    await http.put('/api/admin/flags/auto_mode').set(ah).send({ scope: 'unit', targetId: u.unitId, value: false }).expect(200);
+    await http.put('/api/admin/flags/auto_mode').set(ah).send({ scope: 'org', targetId: u.orgId, value: false }).expect(200);
     expect((await http.get('/api/flags').set(u.h)).body.flags.auto_mode).toBe(false);
     const b = await judge('fb');
     const denied = await http.post(`/api/records/${b.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: true }).expect(403);
     expect(denied.body.message).toContain('全自动阅卷已被管理员暂停');
     await http.post(`/api/records/${b.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: false }).expect(200);
 
-    await http.delete('/api/admin/flags/auto_mode').set(ah).query({ scope: 'unit', targetId: u.unitId }).expect(200);
+    await http.delete('/api/admin/flags/auto_mode').set(ah).query({ scope: 'org', targetId: u.orgId }).expect(200);
     await http.delete('/api/admin/flags/auto_min_confidence').set(ah).query({ scope: 'user', targetId: u.id }).expect(200);
     const c = await judge('fc');
     const low = await http.post(`/api/records/${c.body.gradingId}/confirm`).set(u.h).send({ modifiedScore: 3, isAuto: true }).expect(403);

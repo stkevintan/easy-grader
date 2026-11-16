@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { api } from '../../api/client';
 import type { AdminRecord, LedgerItem, Page } from '../../api/types';
 import { Button, ledgerReason } from '../../ui';
-import { LinkBtn, ListPage, SearchBox, Tag, fmtNum, fmtTime, qs } from './common';
+import { LinkBtn, ListPage, OrgFilter, SearchBox, Tag, fmtNum, fmtTime, qs } from './common';
 
 /** 按用户筛选变化时（含浏览器前进/后退）用 key 重建列表，页码和搜索回到初始 */
 export function AdminRecordsPage() {
@@ -17,9 +17,10 @@ function AdminRecordsList() {
   const userId = params.get('userId');
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
+  const [orgId, setOrgId] = useState('');
   const records = useQuery({
-    queryKey: ['admin-records', page, q, userId],
-    queryFn: () => api<Page<AdminRecord>>('GET', `/api/admin/records?${qs({ page, q, userId })}`),
+    queryKey: ['admin-records', page, q, userId, orgId],
+    queryFn: () => api<Page<AdminRecord>>('GET', `/api/admin/records?${qs({ page, q, userId, orgId })}`),
   });
   const onSearch = useCallback((v: string) => {
     setQ(v);
@@ -28,7 +29,12 @@ function AdminRecordsList() {
   return (
     <ListPage
       title={userId ? `评分记录（用户 #${userId}）` : '评分记录'}
-      search={<SearchBox placeholder="搜索用户名 / 考试 / 平台" onChange={onSearch} />}
+      search={
+        <>
+          <SearchBox placeholder="搜索用户名 / 考试 / 平台" onChange={onSearch} />
+          <OrgFilter value={orgId} onChange={(v) => { setOrgId(v); setPage(1); }} />
+        </>
+      }
       query={records}
       rowKey={(r) => r.id}
       empty="还没有评分记录"

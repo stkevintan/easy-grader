@@ -8,8 +8,8 @@ import {
   FeatureFlagOverride,
   FlagScope,
   FlagSnapshot,
-  ManagementUnit,
-  UnitMembership,
+  Org,
+  User,
 } from '../entities';
 import {
   FLAG_BY_KEY,
@@ -22,11 +22,11 @@ import {
   compareVersions,
 } from './flag-definitions';
 
-export type FlagSource = 'default' | 'global' | 'rollout' | 'unit' | 'user';
+export type FlagSource = 'default' | 'global' | 'rollout' | 'org' | 'user';
 export interface EvaluatedFlag {
   value: FlagValue;
   source: FlagSource;
-  /** source 为 unit / user 时的 id */
+  /** source 为 org / user 时的 id */
   targetId?: number;
 }
 
@@ -51,8 +51,8 @@ export class FlagService {
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     @InjectRepository(FeatureFlagOverride) private readonly overrides: Repository<FeatureFlagOverride>,
     @InjectRepository(FeatureFlagAudit) private readonly audit: Repository<FeatureFlagAudit>,
-    @InjectRepository(UnitMembership) private readonly memberships: Repository<UnitMembership>,
-    @InjectRepository(ManagementUnit) private readonly units: Repository<ManagementUnit>,
+    @InjectRepository(User) private readonly users: Repository<User>,
+    @InjectRepository(Org) private readonly orgs: Repository<Org>,
   ) {}
 
   get validateContext(): FlagValidateContext {
@@ -66,20 +66,17 @@ export class FlagService {
     return rows;
   }
 
-  /** 用户所在、仍启用的单位，按加入顺序（多个单位设了不同值时取第一个） */
-  private async unitIdsOf(userId: number): Promise<number[]> {
-    const ms = await this.memberships.find({ where: { userId }, order: { id: 'ASC' } });
-    if (!ms.length) return [];
-    const enabled = new Set(
-      (await this.units.find({ where: { id: In(ms.map((m) => m.unitId)), enabled: true }, select: ['id'] })).map((u) => u.id),
-    );
-    return ms.map((m) => m.unitId).filter((id) => enabled.has(id));
+  /** 用户所在且仍启用的组织；停用的组织，它的开关覆盖不再生效 */
+  private async orgIdOf(userId: number): Promise<number | null> {
+    const u = await this.users.findOne({ where: { id: userId }, select: ['id', 'orgId'] });
+    if (!u?.orgId) return null;
+    return (await this.orgs.existsBy({ id: u.orgId, enabled: true })) ? u.orgId : null;
   }
 
-  /** 计算一个用户的全部开关取值。优先级：user > unit > rollout > global > 默认值 */
+  /** 计算一个用户的全部开关取值。优先级：user > org > rollout > global > 默认值 */
   async evaluateAll(userId: number, defs: FlagDefinition[] = FLAG_DEFINITIONS): Promise<Record<string, EvaluatedFlag>> {
     const rows = await this.rows();
-    const unitIds = await this.unitIdsOf(userId);
+    const orgId = await this.orgIdOf(userId);
     const ctx = this.validateContext;
     const out: Record<string, EvaluatedFlag> = {};
     for (const def of defs) {
@@ -87,8 +84,8 @@ export class FlagService {
       const mine = rows.filter((r) => r.flagKey === def.key && checkFlagValue(def, r.value, ctx) === null);
       const user = mine.find((r) => r.scope === 'user' && r.targetId === userId);
       if (user) { out[def.key] = { value: user.value, source: 'user', targetId: userId }; continue; }
-      const unit = unitIds.map((id) => mine.find((r) => r.scope === 'unit' && r.targetId === id)).find(Boolean);
-      if (unit) { out[def.key] = { value: unit.value, source: 'unit', targetId: unit.targetId }; continue; }
+      const org = orgId === null ? undefined : mine.find((r) => r.scope === 'org' && r.targetId === orgId);
+      if (org) { out[def.key] = { value: org.value, source: 'org', targetId: org.targetId }; continue; }
       const rollout = mine.find((r) => r.scope === 'rollout');
       if (rollout && rolloutBucket(def.key, userId) < (rollout.percent ?? 0)) {
         out[def.key] = { value: rollout.value, source: 'rollout' };
@@ -143,10 +140,10 @@ export class FlagService {
 
   async listForAdmin() {
     const rows = await this.overrides.find({ order: { id: 'ASC' } });
-    const unitIds = rows.filter((r) => r.scope === 'unit').map((r) => r.targetId);
+    const orgIds = rows.filter((r) => r.scope === 'org').map((r) => r.targetId);
     const userIds = rows.filter((r) => r.scope === 'user').map((r) => r.targetId);
-    const unitNames = new Map(
-      unitIds.length ? (await this.units.findBy({ id: In(unitIds) })).map((u) => [u.id, u.name] as const) : [],
+    const orgNames = new Map(
+      orgIds.length ? (await this.orgs.findBy({ id: In(orgIds) })).map((o) => [o.id, o.name] as const) : [],
     );
     const userNames = new Map<number, string>(
       userIds.length
@@ -174,7 +171,7 @@ export class FlagService {
           .map((r) => ({
             scope: r.scope,
             targetId: r.targetId,
-            targetName: r.scope === 'unit' ? unitNames.get(r.targetId) ?? `#${r.targetId}` : r.scope === 'user' ? userNames.get(r.targetId) ?? `#${r.targetId}` : '',
+            targetName: r.scope === 'org' ? orgNames.get(r.targetId) ?? `#${r.targetId}` : r.scope === 'user' ? userNames.get(r.targetId) ?? `#${r.targetId}` : '',
             value: r.value,
             percent: r.percent,
             valid: checkFlagValue(d, r.value, ctx) === null,
@@ -192,7 +189,7 @@ export class FlagService {
 
   private normTarget(scope: FlagScope, targetId: number | undefined): number {
     if (scope === 'global' || scope === 'rollout') return 0;
-    if (!targetId || !Number.isInteger(targetId) || targetId <= 0) throw new HttpException('请指定单位或用户', 400);
+    if (!targetId || !Number.isInteger(targetId) || targetId <= 0) throw new HttpException('请指定组织或用户', 400);
     return targetId;
   }
 
@@ -217,7 +214,7 @@ export class FlagService {
       }
       percent = input.percent;
     }
-    if (input.scope === 'unit' && !(await this.units.existsBy({ id: targetId }))) throw new HttpException('管理单元不存在', 400);
+    if (input.scope === 'org' && !(await this.orgs.existsBy({ id: targetId }))) throw new HttpException('组织不存在', 400);
     if (input.scope === 'user') {
       const [u] = await this.overrides.manager.query('SELECT id FROM users WHERE id = ?', [targetId]);
       if (!u) throw new HttpException('用户不存在', 400);
