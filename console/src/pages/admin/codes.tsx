@@ -111,7 +111,7 @@ export function AdminCodesPage() {
   );
 }
 
-interface Unit {
+interface OrgOption {
   id: number;
   name: string;
   enabled: boolean;
@@ -121,7 +121,7 @@ export function AdminInvitesPage() {
   const qc = useQueryClient();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
-  const [units, setUnits] = useState<Unit[] | null>(null);
+  const [orgs, setOrgs] = useState<OrgOption[] | null>(null);
   const [created, setCreated] = useState<{ id: number; token: string }[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const invites = useQuery({
@@ -129,6 +129,8 @@ export function AdminInvitesPage() {
     queryFn: () => api<Page<AdminInvite>>('GET', `/api/admin/invites?${qs({ page, q, pageSize: 20 })}`),
   });
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin-invites'] });
+  const allOrgs = useQuery({ queryKey: ['admin-orgs'], queryFn: () => api<OrgOption[]>('GET', '/api/admin/orgs') });
+  const orgName = (id: number) => allOrgs.data?.find((o) => o.id === id)?.name ?? `#${id}`;
   const onSearch = useCallback((v: string) => {
     setQ(v);
     setPage(1);
@@ -136,9 +138,7 @@ export function AdminInvitesPage() {
   const openCreate = async () => {
     setError(null);
     try {
-      const list = (await api<Unit[]>('GET', '/api/admin/units')).filter((u) => u.enabled);
-      if (!list.length) throw new Error('还没有可用的管理单元，暂时不能生成邀请令牌');
-      setUnits(list);
+      setOrgs((await api<OrgOption[]>('GET', '/api/admin/orgs')).filter((o) => o.enabled));
     } catch (e) {
       setError(e);
     }
@@ -167,7 +167,7 @@ export function AdminInvitesPage() {
         onPage={setPage}
         cols={[
           { title: 'ID', render: (x) => x.id },
-          { title: '单元', render: (x) => x.unitId },
+          { title: '组织', render: (x) => (x.orgId === null ? '不加入' : orgName(x.orgId)) },
           { title: '已用/上限', render: (x) => `${x.usedCount} / ${x.maxUses}` },
           { title: '状态', render: status },
           { title: '过期时间', render: (x) => fmtTime(x.expiresAt) },
@@ -175,12 +175,12 @@ export function AdminInvitesPage() {
           { title: '操作', render: (x) => <LinkBtn danger={!x.disabled} onClick={() => toggle(x)}>{x.disabled ? '启用' : '停用'}</LinkBtn> },
         ]}
       />
-      {units && (
+      {orgs && (
         <Dialog
           title="生成邀请令牌"
           submitText="生成"
           fields={[
-            { name: 'unitId', label: '管理单元', type: 'select', options: units.map((u) => [String(u.id), u.name]) },
+            { name: 'orgId', label: '注册后加入的组织', type: 'select', options: [['', '不加入组织'], ...orgs.map((o) => [String(o.id), o.name] as [string, string])] },
             { name: 'count', label: '生成数量', type: 'number', min: 1, max: 500, value: 1, required: true },
             { name: 'maxUses', label: '每个令牌可注册人数', type: 'number', min: 1, max: 100000, value: 10, required: true },
             { name: 'credits', label: '每个账号默认额度', type: 'number', min: 0, max: 1000000, value: 20, required: true },
@@ -198,7 +198,7 @@ export function AdminInvitesPage() {
             const expiry = new Date(`${v.expiresAt}T23:59:59`);
             if (Number.isNaN(expiry.getTime()) || expiry <= new Date()) throw new Error('过期日期必须晚于当前时间');
             const r = await api<{ tokens: { id: number; token: string }[] }>('POST', '/api/admin/invites', {
-              unitId: Number(v.unitId),
+              orgId: v.orgId ? Number(v.orgId) : undefined,
               count,
               maxUses,
               credits,
@@ -208,7 +208,7 @@ export function AdminInvitesPage() {
             refresh();
             setCreated(r.tokens);
           }}
-          onClose={() => setUnits(null)}
+          onClose={() => setOrgs(null)}
         />
       )}
       {created && (

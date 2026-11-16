@@ -15,7 +15,7 @@ import { DataSource, Repository } from 'typeorm';
 import { BillingService } from '../billing/billing.service';
 import { hashPassword, verifyPassword } from '../common/password';
 import { APP_CONFIG, AppConfig } from '../config';
-import { UnitMembership, User } from '../entities';
+import { Org, User } from '../entities';
 import { InviteService } from '../invite.service';
 
 export interface PublicUser {
@@ -48,7 +48,6 @@ export class AuthService implements OnApplicationBootstrap {
     private readonly jwt: JwtService,
     private readonly billing: BillingService,
     private readonly invites: InviteService,
-    @InjectRepository(UnitMembership) private readonly memberships: Repository<UnitMembership>,
   ) {}
 
   /** 启动时确保有一个管理员 */
@@ -87,7 +86,8 @@ export class AuthService implements OnApplicationBootstrap {
     return this.ds.transaction(async (manager) => {
       const invite = await this.invites.consume(inviteToken, manager);
       const users = manager.getRepository(User);
-      let user = users.create({ username, passwordHash, role: 'user', credits: 0, lastLoginAt: new Date() });
+      // 邀请带组织时注册后直接加入
+      let user = users.create({ username, passwordHash, role: 'user', credits: 0, orgId: invite.orgId, lastLoginAt: new Date() });
       try {
         user = await users.save(user);
       } catch {
@@ -96,7 +96,6 @@ export class AuthService implements OnApplicationBootstrap {
       if (invite.credits > 0) {
         user.credits = this.billing.adjust(user.id, invite.credits, 'register', null, '邀请注册赠送');
       }
-      await manager.getRepository(UnitMembership).save(manager.getRepository(UnitMembership).create({ unitId: invite.unitId, userId: user.id, role: 'grader' }));
       return this.issue(user);
     });
   }
@@ -115,8 +114,11 @@ export class AuthService implements OnApplicationBootstrap {
     return this.issue(user);
   }
 
-  async me(userId: number): Promise<PublicUser> {
-    return toPublicUser(await this.users.findOneByOrFail({ id: userId }));
+  /** 当前用户，多一个所属组织 */
+  async me(userId: number): Promise<PublicUser & { org: { id: number; name: string } | null }> {
+    const user = await this.users.findOneByOrFail({ id: userId });
+    const org = user.orgId === null ? null : await this.ds.getRepository(Org).findOneBy({ id: user.orgId });
+    return { ...toPublicUser(user), org: org ? { id: org.id, name: org.name } : null };
   }
 
   async changePassword(userId: number, oldPassword: string, newPassword: string) {

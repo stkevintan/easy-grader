@@ -5,15 +5,16 @@ import { useMe } from '../../api/auth';
 import { api } from '../../api/client';
 import type { AdminUser, Page } from '../../api/types';
 import { Confirm, Dialog } from '../../dialog';
-import { Button } from '../../ui';
-import { LinkBtn, ListPage, SearchBox, Tag, fmtTime, qs } from './common';
+import { Button, ErrorText } from '../../ui';
+import { LinkBtn, ListPage, OrgFilter, SearchBox, Tag, fmtTime, qs } from './common';
 
 type Modal =
   | { kind: 'create' }
   | { kind: 'adjust'; user: AdminUser }
   | { kind: 'password'; user: AdminUser }
   | { kind: 'toggle'; user: AdminUser }
-  | { kind: 'role'; user: AdminUser };
+  | { kind: 'role'; user: AdminUser }
+  | { kind: 'org'; user: AdminUser; orgs: { id: number; name: string; enabled: boolean }[] };
 
 export function AdminUsersPage() {
   const me = useMe();
@@ -21,11 +22,12 @@ export function AdminUsersPage() {
   const navigate = useNavigate();
   const [page, setPage] = useState(1);
   const [q, setQ] = useState('');
+  const [orgId, setOrgId] = useState('');
   const [modal, setModal] = useState<Modal | null>(null);
   const [notice, setNotice] = useState('');
   const users = useQuery({
-    queryKey: ['admin-users', page, q],
-    queryFn: () => api<Page<AdminUser>>('GET', `/api/admin/users?${qs({ page, q })}`),
+    queryKey: ['admin-users', page, q, orgId],
+    queryFn: () => api<Page<AdminUser>>('GET', `/api/admin/users?${qs({ page, q, orgId })}`),
   });
   const refresh = () => qc.invalidateQueries({ queryKey: ['admin-users'] });
   const onSearch = useCallback((v: string) => {
@@ -33,13 +35,29 @@ export function AdminUsersPage() {
     setPage(1);
   }, []);
   const close = () => setModal(null);
+  const [error, setError] = useState<unknown>(null);
+  const openOrg = async (user: AdminUser) => {
+    setError(null);
+    try {
+      const orgs = await api<{ id: number; name: string; enabled: boolean }[]>('GET', '/api/admin/orgs');
+      setModal({ kind: 'org', user, orgs });
+    } catch (e) {
+      setError(e);
+    }
+  };
 
   return (
     <>
       {notice && <p className="mb-2 text-sm text-green-600">{notice}</p>}
+      <ErrorText error={error} />
       <ListPage
         title="用户"
-        search={<SearchBox placeholder="搜索用户名" onChange={onSearch} />}
+        search={
+          <>
+            <SearchBox placeholder="搜索用户名" onChange={onSearch} />
+            <OrgFilter value={orgId} onChange={(v) => { setOrgId(v); setPage(1); }} />
+          </>
+        }
         toolbar={<Button variant="primary" onClick={() => setModal({ kind: 'create' })}>新建用户</Button>}
         query={users}
         rowKey={(u) => u.id}
@@ -56,6 +74,7 @@ export function AdminUsersPage() {
               </span>
             ),
           },
+          { title: '组织', render: (u) => u.org?.name ?? '—' },
           { title: '剩余次数', render: (u) => u.credits },
           { title: '已评分', render: (u) => u.judged },
           { title: '最近评分', render: (u) => fmtTime(u.lastJudgeAt) },
@@ -70,6 +89,7 @@ export function AdminUsersPage() {
                   <LinkBtn onClick={() => setModal({ kind: 'adjust', user: u })}>调额度</LinkBtn>
                   <LinkBtn onClick={() => navigate(`/admin/ledger?userId=${u.id}`)}>流水</LinkBtn>
                   <LinkBtn onClick={() => setModal({ kind: 'password', user: u })}>重置密码</LinkBtn>
+                  <LinkBtn onClick={() => openOrg(u)}>改组织</LinkBtn>
                   {!self && (
                     <LinkBtn onClick={() => setModal({ kind: 'role', user: u })}>{u.role === 'admin' ? '取消管理员' : '设为管理员'}</LinkBtn>
                   )}
@@ -145,6 +165,28 @@ export function AdminUsersPage() {
             await api('PATCH', `/api/admin/users/${modal.user.id}`, { disabled: !modal.user.disabled });
             setNotice(modal.user.disabled ? '已启用' : '已停用');
             refresh();
+          }}
+          onClose={close}
+        />
+      )}
+      {modal?.kind === 'org' && (
+        <Dialog
+          title={`改组织：${modal.user.username}`}
+          fields={[
+            {
+              name: 'orgId',
+              label: '所属组织',
+              type: 'select',
+              value: modal.user.org ? String(modal.user.org.id) : '',
+              options: [['', '不属于任何组织'], ...modal.orgs.map((o) => [String(o.id), o.enabled ? o.name : `${o.name}（已停用）`] as [string, string])],
+            },
+          ]}
+          onSubmit={async (v) => {
+            await api('PATCH', `/api/admin/users/${modal.user.id}`, { orgId: v.orgId ? Number(v.orgId) : null });
+            setNotice('组织已修改');
+            refresh();
+            qc.invalidateQueries({ queryKey: ['admin-orgs'] });
+            if (modal.user.id === me.data?.id) qc.invalidateQueries({ queryKey: ['me'] });
           }}
           onClose={close}
         />

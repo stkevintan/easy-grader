@@ -8,7 +8,7 @@ import { dirname } from 'node:path';
 import { AdaptersController } from './adapters/adapters.controller';
 import { AdaptersService } from './adapters/adapters.service';
 import { AdminController } from './admin/admin.controller';
-import { UnitController } from './admin/unit.controller';
+import { OrgController } from './admin/org.controller';
 import { AuthController } from './auth/auth.controller';
 import { AuthService } from './auth/auth.service';
 import { BillingService } from './billing/billing.service';
@@ -16,6 +16,7 @@ import { AuthGuard } from './common/auth.guard';
 import { UserThrottlerGuard } from './common/throttler.guard';
 import { APP_CONFIG, AppConfig, loadConfig } from './config';
 import { ENTITIES } from './entities';
+import { migrateUnitsToOrgs, type RawDb } from './migrations';
 import { JudgeController } from './judge/judge.controller';
 import { JudgeService } from './judge/judge.service';
 import { GoldService } from './judge/gold.service';
@@ -39,10 +40,12 @@ export class AppModule {
           entities: ENTITIES,
           // 单文件 SQLite + 实体变化较少，直接同步表结构；改字段前请先备份 data/app.db
           synchronize: true,
-          prepareDatabase: (db: { pragma: (s: string) => unknown }) => {
+          prepareDatabase: (db: RawDb & { pragma: (s: string) => unknown }) => {
             db.pragma('journal_mode = WAL');
             db.pragma('busy_timeout = 5000');
             db.pragma('foreign_keys = ON');
+            // 在 synchronize 改表结构之前执行（会先备份）
+            migrateUnitsToOrgs(db, cfg.dbPath);
           },
         }),
         TypeOrmModule.forFeature(ENTITIES),
@@ -58,7 +61,7 @@ export class AppModule {
           { name: 'judge', ttl: 60_000, limit: cfg.rateLimit.judge },
         ]),
       ],
-      controllers: [AuthController, JudgeController, AdaptersController, AdminController, UnitController, FlagController],
+      controllers: [AuthController, JudgeController, AdaptersController, AdminController, OrgController, FlagController],
       providers: [
         { provide: APP_CONFIG, useValue: cfg },
         BillingService,

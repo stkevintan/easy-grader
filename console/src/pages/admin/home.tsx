@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { Bar, BarChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { api } from '../../api/client';
 import type { AdminStats } from '../../api/types';
 import { Card, Empty, ErrorText, Stat } from '../../ui';
+import { OrgFilter, qs } from './common';
 
 const num = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2));
 
@@ -20,13 +22,17 @@ export function fillDays(rows: Day[], days: number, now = Date.now()): Day[] {
 }
 
 export function AdminHomePage() {
-  const stats = useQuery({ queryKey: ['admin-stats'], queryFn: () => api<AdminStats>('GET', '/api/admin/stats') });
+  const [orgId, setOrgId] = useState('');
+  const stats = useQuery({ queryKey: ['admin-stats', orgId], queryFn: () => api<AdminStats>('GET', `/api/admin/stats?${qs({ orgId })}`) });
   const s = stats.data;
   const confirmRate = s && s.records ? Math.round((s.confirmed / s.records) * 100) : 0;
   const daily = s ? fillDays(s.daily, 14) : [];
   return (
     <div className="flex flex-col gap-4">
-      <h1 className="text-lg font-semibold">概览</h1>
+      <div className="flex items-center gap-3">
+        <h1 className="text-lg font-semibold">概览</h1>
+        <OrgFilter value={orgId} onChange={setOrgId} />
+      </div>
       <ErrorText error={stats.error} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="用户数" value={s ? String(s.users) : '…'} />

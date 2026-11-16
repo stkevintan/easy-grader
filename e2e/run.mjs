@@ -62,13 +62,13 @@ async function main() {
     console.log('  扩展 ID:', extId);
 
     step('popup：注册账号');
-    // 注册需要单元邀请令牌：先用管理员账号建一个测试单元并发一枚
+    // 注册需要邀请令牌：先用管理员账号建一个测试组织并发一枚，注册后自动加入
     const adminAuth = await fetch(`${BASE}/api/auth/login`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ username: 'admin', password: ADMIN_PASS }),
     }).then((r) => r.json());
-    const unit = await fetch(`${BASE}/api/admin/units`, {
+    const org = await fetch(`${BASE}/api/admin/orgs`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${adminAuth.token}` },
       body: JSON.stringify({ name: `e2e-${Date.now()}` }),
@@ -76,7 +76,7 @@ async function main() {
     const invite = await fetch(`${BASE}/api/admin/invites`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${adminAuth.token}` },
-      body: JSON.stringify({ unitId: unit.id, count: 1, credits: 5, expiresAt: new Date(Date.now() + 86400000).toISOString() }),
+      body: JSON.stringify({ orgId: org.id, count: 1, credits: 5, expiresAt: new Date(Date.now() + 86400000).toISOString() }),
     }).then((r) => r.json());
 
     const popup = await ctx.newPage();
@@ -182,6 +182,10 @@ async function main() {
     await admin.click('form button[type=submit]');
     await admin.locator('a[href="#/admin"]').click();
     await admin.locator('main', { hasText: '用户数' }).waitFor();
+    await admin.click('a[href="#/admin/orgs"]');
+    await admin.locator('tbody tr', { hasText: org.name }).locator('button', { hasText: '成员' }).click();
+    await admin.locator('#dialog-form', { hasText: 'e2e_teacher' }).waitFor();
+    await admin.click('#dialog-form button:has-text("关闭")');
     await admin.click('a[href="#/admin/records"]');
     await admin.waitForSelector('table tbody tr');
     assert.equal(await admin.locator('table tbody tr').count(), 2);

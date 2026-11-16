@@ -14,6 +14,7 @@ import { AdminCodesPage, AdminInvitesPage } from './pages/admin/codes';
 import { AdminFlagsPage } from './pages/admin/flags';
 import { AdminHomePage } from './pages/admin/home';
 import { AdminPresetsPage } from './pages/admin/presets';
+import { AdminOrgsPage } from './pages/admin/orgs';
 import { AdminLedgerPage, AdminRecordsPage } from './pages/admin/records';
 import { AdminUsersPage } from './pages/admin/users';
 import './index.css';
@@ -38,6 +39,7 @@ const router = createHashRouter([
             children: [
               { path: '/admin', element: <AdminHomePage /> },
               { path: '/admin/users', element: <AdminUsersPage /> },
+              { path: '/admin/orgs', element: <AdminOrgsPage /> },
               { path: '/admin/codes', element: <AdminCodesPage /> },
               { path: '/admin/invites', element: <AdminInvitesPage /> },
               { path: '/admin/records', element: <AdminRecordsPage /> },

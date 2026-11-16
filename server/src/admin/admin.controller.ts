@@ -1,8 +1,8 @@
 import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min } from 'class-validator';
-import { DataSource, Repository } from 'typeorm';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { DataSource, In, Repository } from 'typeorm';
 import type { AdapterConfig } from '../adapters/adapter-config';
 import { AdaptersService } from '../adapters/adapters.service';
 import { toPublicUser } from '../auth/auth.service';
@@ -10,13 +10,19 @@ import { BillingService } from '../billing/billing.service';
 import { InviteService } from '../invite.service';
 import { AdminOnly, AuthUser, CurrentUser } from '../common/auth.guard';
 import { hashPassword } from '../common/password';
-import { CreditLedger, GradingTask, JudgeRecord, RedeemCode, User } from '../entities';
+import { CreditLedger, GradingTask, JudgeRecord, Org, RedeemCode, User } from '../entities';
 
 class PageQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize?: number;
   @IsOptional() @IsString() @MaxLength(100) q?: string;
   @IsOptional() @Type(() => Number) @IsInt() userId?: number;
+  /** 按组织筛选 */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) orgId?: number;
+}
+
+class StatsQuery {
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) orgId?: number;
 }
 
 class CreateUserDto {
@@ -30,6 +36,8 @@ class UpdateUserDto {
   @IsOptional() @IsIn(['user', 'admin']) role?: 'user' | 'admin';
   @IsOptional() @IsBoolean() disabled?: boolean;
   @IsOptional() @IsString() @Length(8, 128) password?: string;
+  /** 改所属组织；null 表示移出组织 */
+  @IsOptional() @ValidateIf((_, v) => v !== null) @Type(() => Number) @IsInt() @Min(1) orgId?: number | null;
 }
 
 class AdjustDto {
@@ -53,7 +61,8 @@ class CreateInvitesDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(500) count?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100_000) maxUses?: number;
   @Type(() => Number) @IsInt() @Min(0) @Max(1_000_000) credits!: number;
-  @Type(() => Number) @IsInt() @Min(1) unitId!: number;
+  /** 注册后自动加入的组织；不填表示不属于任何组织 */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) orgId?: number;
   @IsDateString() expiresAt!: string;
   @IsOptional() @IsString() @MaxLength(200) note?: string;
 }
@@ -98,42 +107,50 @@ export class AdminController {
     @InjectRepository(RedeemCode) private readonly codes: Repository<RedeemCode>,
     @InjectRepository(GradingTask) private readonly tasks: Repository<GradingTask>,
     @InjectRepository(JudgeRecord) private readonly records: Repository<JudgeRecord>,
+    @InjectRepository(Org) private readonly orgs: Repository<Org>,
     private readonly billing: BillingService,
     private readonly adapters: AdaptersService,
     private readonly invites: InviteService,
   ) {}
 
+  /** orgId 给出时只统计该组织成员 */
   @Get('stats')
-  async stats() {
+  async stats(@Query() q: StatsQuery) {
     const since = new Date(Date.now() - 13 * 86400_000);
     since.setUTCHours(0, 0, 0, 0);
-    const [users, tasks, records, failed, credits] = await Promise.all([
-      this.users.count(),
-      this.tasks.count(),
-      this.records.countBy({ status: 'done' }),
-      this.records.countBy({ status: 'failed' }),
-      this.users.sum('credits'),
+    const org = q.orgId ?? null;
+    // 成员条件：用户表用 u.orgId，记录和任务按 userId 关联用户
+    const inOrg = (col: string) => (org === null ? '1 = 1' : `${col} IN (SELECT id FROM users WHERE orgId = ?)`);
+    const args = org === null ? [] : [org];
+    const one = async (sql: string, extra: unknown[] = []) => (await this.ds.query(sql, [...extra, ...args]))[0] ?? {};
+    const [u, t, r] = await Promise.all([
+      one(`SELECT COUNT(*) AS n, COALESCE(SUM(credits), 0) AS credits FROM users WHERE ${org === null ? '1 = 1' : 'orgId = ?'}`),
+      one(`SELECT COUNT(*) AS n FROM tasks WHERE ${inOrg('userId')}`),
+      one(`SELECT SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
+                  SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed
+             FROM judge_records WHERE ${inOrg('userId')}`),
     ]);
     const daily = await this.ds.query(
       `SELECT date(createdAt) AS day,
               SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
               SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
               COUNT(DISTINCT userId) AS users
-         FROM judge_records WHERE createdAt >= ? GROUP BY day ORDER BY day`,
-      [since.toISOString().replace('T', ' ').slice(0, 19)],
+         FROM judge_records WHERE createdAt >= ? AND ${inOrg('userId')} GROUP BY day ORDER BY day`,
+      [since.toISOString().replace('T', ' ').slice(0, 19), ...args],
     );
     const avg = await this.ds.query(
       `SELECT AVG(latencyMs) AS latency, AVG(confidence) AS confidence,
               AVG(CASE WHEN finalScore IS NOT NULL AND aiScore IS NOT NULL THEN ABS(finalScore - aiScore) END) AS drift,
               SUM(CASE WHEN confirmedAt IS NOT NULL THEN 1 ELSE 0 END) AS confirmed
-         FROM judge_records WHERE status = 'done'`,
+         FROM judge_records WHERE status = 'done' AND ${inOrg('userId')}`,
+      args,
     );
     return {
-      users,
-      tasks,
-      records,
-      failed,
-      creditsOutstanding: credits ?? 0,
+      users: Number(u.n ?? 0),
+      tasks: Number(t.n ?? 0),
+      records: Number(r.done ?? 0),
+      failed: Number(r.failed ?? 0),
+      creditsOutstanding: Number(u.credits ?? 0),
       avgLatencyMs: Math.round(Number(avg[0]?.latency ?? 0)),
       avgConfidence: Number(avg[0]?.confidence ?? 0),
       avgDrift: Number(avg[0]?.drift ?? 0),
@@ -153,8 +170,11 @@ export class AdminController {
   async listUsers(@Query() q: PageQuery) {
     const { page, pageSize, skip, take } = paging(q);
     const qb = this.users.createQueryBuilder('u').orderBy('u.id', 'DESC').skip(skip).take(take);
-    if (q.q) qb.where('u.username LIKE :q', { q: `%${q.q}%` });
+    if (q.q) qb.andWhere('u.username LIKE :q', { q: `%${q.q}%` });
+    if (q.orgId) qb.andWhere('u.orgId = :orgId', { orgId: q.orgId });
     const [rows, total] = await qb.getManyAndCount();
+    const orgIds = [...new Set(rows.map((r) => r.orgId).filter((x): x is number => x !== null))];
+    const orgNames = new Map(orgIds.length ? (await this.orgs.findBy({ id: In(orgIds) })).map((o) => [o.id, o.name] as const) : []);
     const ids = rows.map((r) => r.id);
     const usage = ids.length
       ? await this.ds.query(
@@ -171,6 +191,7 @@ export class AdminController {
       items: rows.map((u) => ({
         ...toPublicUser(u),
         disabled: u.disabled,
+        org: u.orgId === null ? null : { id: u.orgId, name: orgNames.get(u.orgId) ?? `#${u.orgId}` },
         lastLoginAt: u.lastLoginAt,
         judged: Number(byId.get(u.id)?.n ?? 0),
         lastJudgeAt: byId.get(u.id)?.last ?? null,
@@ -199,6 +220,10 @@ export class AdminController {
     if (!u) throw new NotFoundException('用户不存在');
     if (id === me.id && (dto.disabled || dto.role === 'user')) throw new BadRequestException('不能停用或降级自己');
     if (dto.role) u.role = dto.role;
+    if (dto.orgId !== undefined) {
+      if (dto.orgId !== null && !(await this.orgs.existsBy({ id: dto.orgId }))) throw new BadRequestException('组织不存在');
+      u.orgId = dto.orgId;
+    }
     if (dto.disabled !== undefined) {
       u.disabled = dto.disabled;
       u.tokenVersion += 1;
@@ -208,7 +233,7 @@ export class AdminController {
       u.tokenVersion += 1;
     }
     await this.users.save(u);
-    return { ...toPublicUser(u), disabled: u.disabled };
+    return { ...toPublicUser(u), disabled: u.disabled, orgId: u.orgId };
   }
 
   @HttpCode(200)
@@ -266,7 +291,7 @@ export class AdminController {
   async createInvites(@CurrentUser() me: AuthUser, @Body() dto: CreateInvitesDto) {
     const expiresAt = new Date(dto.expiresAt);
     if (expiresAt < new Date()) throw new BadRequestException('过期时间必须在未来');
-    return { tokens: await this.invites.create(dto.unitId, me.id, dto.count ?? 1, dto.maxUses ?? 10, dto.credits, expiresAt, dto.note ?? '') };
+    return { tokens: await this.invites.create(dto.orgId ?? null, me.id, dto.count ?? 1, dto.maxUses ?? 10, dto.credits, expiresAt, dto.note ?? '') };
   }
 
   @Patch('invites/:id')
@@ -313,6 +338,7 @@ export class AdminController {
       .offset(skip)
       .limit(take);
     if (q.userId) qb.andWhere('r.userId = :uid', { uid: q.userId });
+    if (q.orgId) qb.andWhere('u.orgId = :orgId', { orgId: q.orgId });
     if (q.q) qb.andWhere('(u.username LIKE :q OR t.examTitle LIKE :q OR t.platformHost LIKE :q)', { q: `%${q.q}%` });
     const items = await qb.getRawMany();
     const total = await qb.getCount();

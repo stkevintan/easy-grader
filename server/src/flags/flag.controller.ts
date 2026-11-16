@@ -5,7 +5,7 @@ import { AdminOnly, AuthUser, CurrentUser } from '../common/auth.guard';
 import type { FlagScope } from '../entities';
 import { FlagService } from './flag.service';
 
-const SCOPES: FlagScope[] = ['global', 'rollout', 'unit', 'user'];
+const SCOPES: FlagScope[] = ['global', 'rollout', 'org', 'user'];
 
 class SetOverrideDto {
   @IsIn(SCOPES) scope!: FlagScope;

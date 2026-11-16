@@ -6,7 +6,7 @@ import { Confirm, Dialog, type DialogField } from '../../dialog';
 import { Button, Card, Empty, ErrorText } from '../../ui';
 import { LinkBtn, Table, Tag, fmtTime, qs } from './common';
 
-const SCOPE_LABEL: Record<string, string> = { global: '全局', rollout: '按比例', unit: '单位', user: '用户' };
+const SCOPE_LABEL: Record<string, string> = { global: '全局', rollout: '按比例', org: '组织', user: '用户' };
 const fmtFlag = (v: unknown) => (typeof v === 'boolean' ? (v ? '开' : '关') : v === '' ? '（空）' : String(v));
 type Snap = { value: unknown; percent?: number | null } | null;
 const fmtSnap = (s: Snap) => (s ? `${fmtFlag(s.value)}${s.percent !== null && s.percent !== undefined ? `（${s.percent}%）` : ''}` : '无');
@@ -22,13 +22,13 @@ interface AuditItem {
   after: Snap;
 }
 
-interface Unit {
+interface OrgOption {
   id: number;
   name: string;
 }
 
 type Modal =
-  | { kind: 'edit'; flag: FlagDef; override: FlagOverride | null; units: Unit[] }
+  | { kind: 'edit'; flag: FlagDef; override: FlagOverride | null; orgs: OrgOption[] }
   | { kind: 'delete'; flag: FlagDef; override: FlagOverride };
 
 export function AdminFlagsPage() {
@@ -51,8 +51,8 @@ export function AdminFlagsPage() {
   const openEdit = async (flag: FlagDef, override: FlagOverride | null) => {
     setError(null);
     try {
-      const units = override ? [] : await api<Unit[]>('GET', '/api/admin/units');
-      setModal({ kind: 'edit', flag, override, units });
+      const orgs = override ? [] : await api<OrgOption[]>('GET', '/api/admin/orgs');
+      setModal({ kind: 'edit', flag, override, orgs });
     } catch (e) {
       setError(e);
     }
@@ -64,7 +64,7 @@ export function AdminFlagsPage() {
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">功能开关</h1>
       <p className="text-sm text-slate-500">
-        取值优先级：用户 &gt; 单位 &gt; 按比例 &gt; 全局 &gt; 默认值。用户在多个单位时取加入最早的、设置了覆盖的单位。开关在代码里定义，这里只能改取值。
+        取值优先级：用户 &gt; 组织 &gt; 按比例 &gt; 全局 &gt; 默认值。停用的组织，它的覆盖不再生效。开关在代码里定义，这里只能改取值。
       </p>
       {notice && <p className="text-sm text-green-600">{notice}</p>}
       <ErrorText error={error} />
@@ -133,7 +133,7 @@ export function AdminFlagsPage() {
         <FlagDialog
           flag={modal.flag}
           override={modal.override}
-          units={modal.units}
+          orgs={modal.orgs}
           profiles={profiles}
           onSaved={() => {
             setNotice('已保存，扩展最晚 5 分钟内生效');
@@ -161,14 +161,14 @@ export function AdminFlagsPage() {
 function FlagDialog({
   flag,
   override: o,
-  units,
+  orgs,
   profiles,
   onSaved,
   onClose,
 }: {
   flag: FlagDef;
   override: FlagOverride | null;
-  units: Unit[];
+  orgs: OrgOption[];
   profiles: string[];
   onSaved: () => void;
   onClose: () => void;
@@ -189,8 +189,8 @@ function FlagDialog({
   const fields: DialogField[] = o
     ? [valueField]
     : [
-        { name: 'scope', label: '范围', type: 'select', options: [['unit', '某个单位'], ['user', '某个用户'], ['rollout', '按比例放量'], ['global', '全局（替代默认值）']] },
-        { name: 'unitId', label: '单位（范围为单位时）', type: 'select', options: units.length ? units.map((u) => [String(u.id), u.name]) : [['', '（还没有单位）']] },
+        { name: 'scope', label: '范围', type: 'select', options: [['org', '某个组织'], ['user', '某个用户'], ['rollout', '按比例放量'], ['global', '全局（替代默认值）']] },
+        { name: 'orgId', label: '组织（范围为组织时）', type: 'select', options: orgs.length ? orgs.map((u) => [String(u.id), u.name]) : [['', '（还没有组织）']] },
         { name: 'username', label: '用户名（范围为用户时）', placeholder: '准确的用户名' },
         valueField,
       ];
@@ -214,9 +214,9 @@ function FlagDialog({
       onSubmit={async (v) => {
         const scope = o ? o.scope : String(v.scope);
         let targetId = o ? o.targetId : undefined;
-        if (!o && scope === 'unit') {
-          if (!v.unitId) throw new Error('请先创建管理单元');
-          targetId = Number(v.unitId);
+        if (!o && scope === 'org') {
+          if (!v.orgId) throw new Error('请先建一个组织');
+          targetId = Number(v.orgId);
         }
         let username: string | undefined;
         if (!o && scope === 'user') {
