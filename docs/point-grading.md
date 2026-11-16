@@ -113,7 +113,7 @@ interface Rubric {
 `judge_records` 加三列，都可以为空。旧记录不受影响。
 
 - `rubricSnapshot`：评分时那一版要点列表的**完整快照**（要点、分值、`allowPartial`、汇总规则、`version`），再加上当时的满分和步长。任务上的要点列表以后怎么改，这条记录的含义都不变；确认校验和记录详情都只读这份快照。快照只有几百字节，不另建版本历史表。
-- `aiPoints`：AI 的逐点结果 `[{ id, level, score, quote, why, verified, samples, disagree }]`。`samples` 和 `disagree` 只在多次采样时有。它们跟着记录保存，同一张图命中缓存时也照样返回，不会丢掉不一致的提示。
+- `aiPoints`：AI 的逐点结果 `[{ id, level, score, quote, why, verified, missing, samples, disagree }]`。`missing` 表示模型漏判、由服务端补成 none / 0 的点，用来和正常的 0 分区分（重新读取记录或命中缓存时也要保留）。`samples` 和 `disagree` 只在多次采样时有。它们跟着记录保存，同一张图命中缓存时也照样返回，不会丢掉不一致的提示。
 - `finalPoints`：老师确认的每点得分 `[{ id, score }]`；老师只改了总分时为空（见下）。
 
 确认接口 `POST /api/records/:id/confirm` 只新增字段，不改原有的：
