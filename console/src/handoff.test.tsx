@@ -180,3 +180,36 @@ describe('handoff 页卸载与会话变化', () => {
     expect(session.token()).toBe('');
   });
 });
+
+describe('handoff 不重放旧凭据', () => {
+  beforeEach(() => sessionStorage.clear());
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('用过的链接在退出后再打开：重新向服务端换码（被拒），不恢复旧登录', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(json(200, { token: 't-alice', user: alice }))
+      .mockResolvedValueOnce(json(401, { message: '交接码无效或已过期' }));
+    vi.stubGlobal('fetch', fetchMock);
+    renderAt('/handoff?code=EGH-test-code-reuse&to=/credits');
+    expect(await screen.findByText('额度页')).toBeInTheDocument();
+    session.clear();
+    document.body.innerHTML = '';
+    renderAt('/handoff?code=EGH-test-code-reuse&to=/credits');
+    expect(await screen.findByRole('alert')).toHaveTextContent('交接码无效');
+    expect(session.token()).toBe('');
+    expect(fetchMock.mock.calls.filter((c) => c[0] === '/api/auth/handoff/redeem')).toHaveLength(2);
+  });
+
+  it('停在「要切换吗」期间控制台换了 token：点切换也保留当前登录', async () => {
+    session.set('t-bob');
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(json(200, { token: 't-alice', user: alice }))
+      .mockResolvedValueOnce(json(200, bob)));
+    renderAt('/handoff?code=EGH-test-code-race&to=/credits');
+    const btn = await screen.findByRole('button', { name: '切换到 alice' });
+    session.set('t-bob-new'); // 比如改密码后换了新 token
+    await userEvent.click(btn);
+    expect(await screen.findByRole('alert')).toHaveTextContent('已保留当前登录');
+    expect(session.token()).toBe('t-bob-new');
+  });
+});

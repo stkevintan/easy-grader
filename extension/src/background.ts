@@ -200,14 +200,21 @@ async function repairSites() {
  * 已经开着控制台的标签页时切过去，不另开新的。
  */
 async function openConsole(path: string) {
+  // 快照这次操作用的服务端和登录：换码期间退出、换号或改了服务端地址，旧结果作废
   const { serverUrl } = await settings();
+  const token = (await store.get()).token;
   const base = `${serverUrl.replace(/\/+$/, '')}/console/`;
   const to = safeConsolePath(path);
   let hash = '#/login';
-  if ((await store.get()).token && to !== '/login') {
+  if (token && to !== '/login') {
     try {
-      const { code } = await api<{ code: string }>('POST', '/api/auth/handoff');
-      hash = `#/handoff?${qs({ code, to })}`;
+      const { code } = await api<{ code: string }>('POST', '/api/auth/handoff', undefined, 15000, token);
+      const now = (await store.get()).token;
+      if ((await settings()).serverUrl !== serverUrl || (now && now !== token)) {
+        throw new Error('扩展的登录或服务端在这期间变了，请再点一次');
+      }
+      // 期间退出了：不带码，回落到登录页
+      if (now) hash = `#/handoff?${qs({ code, to })}`;
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 401)) throw e;
     }

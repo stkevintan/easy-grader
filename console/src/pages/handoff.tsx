@@ -42,8 +42,9 @@ type Outcome =
   | { kind: 'conflict'; current: User; next: { token: string; user: User } };
 
 /**
- * 每个码只换一次，结果按码共享：StrictMode 下 effect 会「挂载→卸载→再挂载」，
- * 第二次挂载订阅同一个结果，不会因为第一次被取消而丢掉唯一的兑换结果。
+ * 正在进行的换码按码共享：StrictMode 下 effect 会「挂载→卸载→再挂载」，
+ * 第二次挂载订阅同一个请求，不会因为第一次被取消而丢掉唯一的兑换结果。
+ * 请求一结束（成功或失败）就删掉缓存项：结果里有 JWT，不能留着让已用过的链接重放旧登录。
  * 记下开始时控制台的 token，写登录态前核对没变（期间退出或换了账号就作废）。
  */
 const inflight = new Map<string, { startToken: string; result: Promise<Outcome> }>();
@@ -59,6 +60,10 @@ function exchange(code: string) {
     })();
     entry = { startToken, result };
     inflight.set(code, entry);
+    const done = () => {
+      if (inflight.get(code) === entry) inflight.delete(code);
+    };
+    result.then(done, done);
   }
   return entry;
 }
@@ -66,7 +71,7 @@ function exchange(code: string) {
 type State =
   | { kind: 'loading' }
   | { kind: 'error'; message: string; to: string }
-  | { kind: 'conflict'; current: User; next: { token: string; user: User }; to: string };
+  | { kind: 'conflict'; current: User; next: { token: string; user: User }; to: string; startToken: string };
 
 /**
  * 从扩展打开控制台：#/handoff?code=…&to=/credits
@@ -80,7 +85,12 @@ export function HandoffPage() {
   const code = params.get('code') ?? '';
   const to = safeTarget(params.get('to'));
 
-  const finish = (token: string, user: User, target: string) => {
+  /** 写登录态前再核对一次：停在选择框期间控制台换了 token（改密码、退出、在别的页登录），就保留当前登录 */
+  const finish = (token: string, user: User, target: string, startToken: string) => {
+    if (session.token() !== startToken) {
+      setState({ kind: 'error', message: '控制台的登录状态在这期间变了，已保留当前登录，请从扩展重新打开', to: target });
+      return;
+    }
     session.set(token);
     qc.clear();
     qc.setQueryData(['me'], user);
@@ -103,8 +113,8 @@ export function HandoffPage() {
       .then((r) => {
         if (cancelled) return;
         if (session.token() !== startToken) throw new Error('控制台的登录状态在这期间变了，请从扩展重新打开');
-        if (r.kind === 'conflict') setState({ kind: 'conflict', current: r.current, next: r.next, to });
-        else finish(r.next.token, r.next.user, to);
+        if (r.kind === 'conflict') setState({ kind: 'conflict', current: r.current, next: r.next, to, startToken });
+        else finish(r.next.token, r.next.user, to, startToken);
       })
       .catch((e: unknown) => {
         if (!cancelled) setState({ kind: 'error', message: e instanceof Error ? e.message : String(e), to });
@@ -136,7 +146,7 @@ export function HandoffPage() {
                 控制台当前登录的是 <b>{state.current.username}</b>，扩展里登录的是 <b>{state.next.user.username}</b>。要切换吗？
               </p>
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onClick={() => finish(state.next.token, state.next.user, state.to)}>
+                <Button variant="primary" onClick={() => finish(state.next.token, state.next.user, state.to, state.startToken)}>
                   切换到 {state.next.user.username}
                 </Button>
                 <Button onClick={() => navigate(state.to, { replace: true })}>保持 {state.current.username}</Button>
