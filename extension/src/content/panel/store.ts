@@ -25,7 +25,8 @@ export type PanelState =
 
 export const state   = signal<PanelState>({ view: 'login' });
 export const user    = signal<PublicUser | null>(null);
-export const notice  = signal<{ kind: 'info' | 'ok' | 'warn' | 'error'; text: string } | null>(null);
+/** action：提示旁边的按钮，点了在控制台打开 path（如额度不足时「去兑换」） */
+export const notice  = signal<{ kind: 'info' | 'ok' | 'warn' | 'error'; text: string; action?: { label: string; path: string } } | null>(null);
 export const settings = signal<Settings | null>(null);
 export const subjects = signal<string[]>(['语文', '数学', '英语', '历史', '地理', '道德与法治', '政治', '物理', '化学', '生物', '其他']);
 /** 服务端功能开关；拉到之前按保守取值（全自动不可用） */
@@ -68,7 +69,7 @@ export const isPicking        = signal(false);
 
 // ---------- 便利写入 ----------
 
-export const setNotice = (kind: 'info'|'ok'|'warn'|'error', text: string) => { notice.value = { kind, text }; };
+export const setNotice = (kind: 'info'|'ok'|'warn'|'error', text: string, action?: { label: string; path: string }) => { notice.value = { kind, text, action }; };
 export const clearNotice = () => { notice.value = null; };
 
 /** 只有当前 view 是 task 时才有 form */

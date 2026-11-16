@@ -52,6 +52,11 @@ export interface FlagsResult {
   version: string;
 }
 
+/** 控制台里要打开的页：只允许站内路径（/ 开头、不是 //、只含常见的路径和查询字符），否则回首页 */
+export function safeConsolePath(path: string): string {
+  return /^\/(?!\/)[A-Za-z0-9\-._~/?=&%]*$/.test(path) ? path : '/';
+}
+
 /** 比较点分版本号，缺省段按 0；a<b 返回负数 */
 export function compareVersions(a: string, b: string): number {
   const pa = a.split('.').map((x) => Number(x) || 0);
@@ -158,7 +163,9 @@ export type BgRequest =
   | { cmd: 'tab.capture' }
   | { cmd: 'site.list' }
   | { cmd: 'site.enable'; origin: string }
-  | { cmd: 'site.disable'; origin: string };
+  | { cmd: 'site.disable'; origin: string }
+  /** 打开控制台的某一页（如 /credits、/records/xxx）；已登录时免登录带过去 */
+  | { cmd: 'console.open'; path: string };
 
 export type BgResponse<T = unknown> = { ok: true; data: T } | { ok: false; error: string; status?: number };
 

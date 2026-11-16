@@ -6,7 +6,7 @@
  * - 管理用户启用的阅卷站点（动态注册内容脚本）
  */
 import type { BgRequest, BgResponse, ClientFlags, FlagsResult, PublicUser, Settings } from './shared/protocol';
-import { DEFAULT_SETTINGS, SAFE_FLAGS } from './shared/protocol';
+import { DEFAULT_SETTINGS, SAFE_FLAGS, safeConsolePath } from './shared/protocol';
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
@@ -192,6 +192,44 @@ async function repairSites() {
   }
 }
 
+// ---------- 打开控制台 ----------
+
+/**
+ * 打开控制台：已登录时先换一次性交接码（放在 # 后面，不进服务端日志），
+ * 控制台用它换自己的登录；没登录或换码时登录已失效，就打开控制台的登录页。
+ * 已经开着控制台的标签页时切过去，不另开新的。
+ */
+async function openConsole(path: string) {
+  // 快照这次操作用的服务端和登录：换码期间退出、换号或改了服务端地址，旧结果作废
+  const { serverUrl } = await settings();
+  const token = (await store.get()).token;
+  const base = `${serverUrl.replace(/\/+$/, '')}/console/`;
+  const to = safeConsolePath(path);
+  let hash = '#/login';
+  if (token && to !== '/login') {
+    try {
+      const { code } = await api<{ code: string }>('POST', '/api/auth/handoff', undefined, 15000, token);
+      const now = (await store.get()).token;
+      if ((await settings()).serverUrl !== serverUrl || (now && now !== token)) {
+        throw new Error('扩展的登录或服务端在这期间变了，请再点一次');
+      }
+      // 期间退出了：不带码，回落到登录页
+      if (now) hash = `#/handoff?${qs({ code, to })}`;
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 401)) throw e;
+    }
+  }
+  const url = base + hash;
+  const existing = (await chrome.tabs.query({})).find((t) => t.id !== undefined && t.url?.startsWith(base));
+  if (existing?.id !== undefined) {
+    await chrome.tabs.update(existing.id, { url, active: true });
+    if (existing.windowId !== undefined) await chrome.windows.update(existing.windowId, { focused: true });
+  } else {
+    await chrome.tabs.create({ url });
+  }
+  return {};
+}
+
 // ---------- 命令路由 ----------
 
 type Sender = chrome.runtime.MessageSender;
@@ -288,6 +326,8 @@ async function handle(req: BgRequest, sender: Sender): Promise<unknown> {
     case 'site.disable':
       await unregisterSite(new URL(req.origin).origin);
       return {};
+    case 'console.open':
+      return openConsole(req.path);
     default: {
       const never: never = req;
       throw new Error(`未知命令：${(never as { cmd?: string }).cmd}`);

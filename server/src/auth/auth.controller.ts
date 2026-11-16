@@ -6,7 +6,7 @@ import { ThrottleBucket } from '../common/throttler.guard';
 import { AuthUser, CurrentUser, Public } from '../common/auth.guard';
 import { APP_CONFIG, AppConfig } from '../config';
 import { CreditLedger } from '../entities';
-import { ChangePasswordDto, LoginDto, RedeemDto, RegisterDto } from './auth.dto';
+import { ChangePasswordDto, HandoffRedeemDto, LoginDto, RedeemDto, RegisterDto } from './auth.dto';
 import { AuthService } from './auth.service';
 
 // 版本号取自 package.json，避免发版时忘了同步这里的硬编码
@@ -47,6 +47,22 @@ export class AuthController {
   @Post('auth/login')
   login(@Body() dto: LoginDto) {
     return this.auth.login(dto.username, dto.password);
+  }
+
+  /** 扩展打开控制台前换交接码（码放在控制台地址的 # 后面，不进服务端日志） */
+  @ThrottleBucket('auth')
+  @HttpCode(200)
+  @Post('auth/handoff')
+  handoff(@CurrentUser() u: AuthUser) {
+    return this.auth.issueHandoff(u.id, u.tokenVersion);
+  }
+
+  @Public()
+  @ThrottleBucket('auth')
+  @HttpCode(200)
+  @Post('auth/handoff/redeem')
+  redeemHandoff(@Body() dto: HandoffRedeemDto) {
+    return this.auth.redeemHandoff(dto.code);
   }
 
   @Get('auth/me')

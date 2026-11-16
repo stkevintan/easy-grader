@@ -17,6 +17,7 @@ import { hashPassword, verifyPassword } from '../common/password';
 import { APP_CONFIG, AppConfig } from '../config';
 import { Org, User } from '../entities';
 import { InviteService } from '../invite.service';
+import { HandoffService } from './handoff.service';
 
 export interface PublicUser {
   id: number;
@@ -48,6 +49,7 @@ export class AuthService implements OnApplicationBootstrap {
     private readonly jwt: JwtService,
     private readonly billing: BillingService,
     private readonly invites: InviteService,
+    private readonly handoffs: HandoffService,
   ) {}
 
   /** 启动时确保有一个管理员 */
@@ -119,6 +121,29 @@ export class AuthService implements OnApplicationBootstrap {
     const user = await this.users.findOneByOrFail({ id: userId });
     const org = user.orgId === null ? null : await this.ds.getRepository(Org).findOneBy({ id: user.orgId });
     return { ...toPublicUser(user), org: org ? { id: org.id, name: org.name } : null };
+  }
+
+  /** 扩展用当前登录换一个一次性交接码 */
+  /**
+   * tokenVersion 用这次请求的 JWT 里、鉴权时核对过的版本，不重新读库：
+   * 鉴权之后、这里之前别的请求改了密码时，旧登录不能借此换到新版本的码
+   */
+  async issueHandoff(userId: number, tokenVersion: number) {
+    const user = await this.users.findOneBy({ id: userId });
+    if (!user || user.disabled || user.tokenVersion !== tokenVersion) {
+      throw new UnauthorizedException('登录已失效，请重新登录');
+    }
+    return this.handoffs.issue(user.id, tokenVersion);
+  }
+
+  /** 控制台用交接码换自己的 JWT；码签发后改过密码或被停用都作废 */
+  async redeemHandoff(code: string) {
+    const p = this.handoffs.take(code);
+    const user = p ? await this.users.findOneBy({ id: p.userId }) : null;
+    if (!p || !user || user.disabled || user.tokenVersion !== p.tokenVersion) {
+      throw new UnauthorizedException('交接码无效或已过期，请从扩展重新打开控制台');
+    }
+    return this.issue(user);
   }
 
   async changePassword(userId: number, oldPassword: string, newPassword: string) {

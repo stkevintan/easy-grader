@@ -179,7 +179,7 @@ export async function judgeOnce(force = false, preCaptured?: string): Promise<Gr
     if (gen !== judgeGeneration) return null; // superseded
     // 服务端说版本过旧：重新拉开关，面板会显示更新提示
     if (e instanceof BgError && e.status === 426) void refreshFlags(true);
-    setNotice('error', errText(e));
+    setNotice('error', errText(e), isOutOfCredits(e) ? { label: '去兑换', path: '/credits' } : undefined);
     state.value = { view: 'ready', task };
     return null;
   }
@@ -300,6 +300,18 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
     return false;
   }
 }
+
+/** 在控制台打开某一页（由 background 换交接码、复用已开的控制台标签页） */
+export async function openConsole(path: string) {
+  try {
+    await bg({ cmd: 'console.open', path });
+  } catch (e) {
+    setNotice('error', `打开控制台失败：${errText(e)}`);
+  }
+}
+
+/** 服务端「评分次数不足」的提示：带一个去控制台兑换的按钮 */
+const isOutOfCredits = (e: unknown) => e instanceof BgError && e.status === 400 && /次数不足/.test(e.message);
 
 export function outdatedText(): string {
   return `扩展版本过旧（当前 ${extVersion.value}，最低要求 ${flags.value.min_extension_version}），请到 chrome://extensions 更新 Easy Grader 后再阅卷`;

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { AppModule } from '../src/app.module';
 import { loadConfig } from '../src/config';
 import { configureApp, isAllowedOrigin } from '../src/main';
+import { AuthService } from '../src/auth/auth.service';
 import { buildOcrPrompt, buildPrompt, extractJson, isBlankOcr, ModelOutputError, ModelService, parseVerdict, snapScore } from '../src/judge/model.service';
 import { pickGoldExamples } from '../src/judge/gold.service';
 import { hostMatches, normalizeHostPattern } from '../src/adapters/adapter-config';
@@ -248,6 +249,9 @@ describe('Easy Grader server (e2e)', () => {
     await http.post(`/api/records/${id}/confirm`).set(auth(userToken)).send({ modifiedScore: 5, isAuto: false }).expect(200);
     const tasks = await http.get('/api/tasks').set(auth(userToken)).expect(200);
     expect(tasks.body.find((t: any) => t.taskId === taskId)).toMatchObject({ judged: 3, confirmed: 1 });
+    // 单题接口带同样的统计
+    const one = await http.get(`/api/tasks/${taskId}`).set(auth(userToken)).expect(200);
+    expect(one.body).toMatchObject({ taskId, judged: 3, confirmed: 1 });
   });
 
   it('评分记录详情只能看自己的；个人用量统计按天汇总', async () => {
@@ -404,6 +408,32 @@ describe('Easy Grader server (e2e)', () => {
     const invites = await http.get('/api/admin/invites').set(ah).expect(200);
     expect(invites.body.items.find((x: { id: number }) => x.id === free.body.tokens[0].id).orgId).toBeNull();
     expect(invites.body.items.find((x: { id: number }) => x.id === inv.body.tokens[0].id).orgId).toBe(other.body.id);
+  });
+
+  it('免登录交接：扩展换码，控制台用码换 JWT；码只能用一次；改密码后旧码作废', async () => {
+    await http.post('/api/auth/handoff').expect(401);
+    const login = await http.post('/api/auth/login').send({ username: '王老师', password: 'password-123' }).expect(200);
+    const h = auth(login.body.token);
+    const issued = await http.post('/api/auth/handoff').set(h).expect(200);
+    expect(issued.body).toMatchObject({ code: expect.stringMatching(/^EGH-/), expiresIn: 60 });
+    // 换到的是同一个用户、一个能用的新 token
+    const r = await http.post('/api/auth/handoff/redeem').send({ code: issued.body.code }).expect(200);
+    expect(r.body.user.username).toBe('王老师');
+    await http.get('/api/auth/me').set(auth(r.body.token)).expect(200);
+    // 只能用一次；乱填的码、格式不对的码都被拒
+    await http.post('/api/auth/handoff/redeem').send({ code: issued.body.code }).expect(401);
+    await http.post('/api/auth/handoff/redeem').send({ code: 'EGH-not-a-real-code' }).expect(401);
+    await http.post('/api/auth/handoff/redeem').send({ code: 'x' }).expect(400);
+    await http.post('/api/auth/handoff/redeem').send({}).expect(400);
+    // 签发后改了密码：码作废
+    const stale = await http.post('/api/auth/handoff').set(h).expect(200);
+    const changed = await http.post('/api/auth/password').set(h).send({ oldPassword: 'password-123', newPassword: 'password-789' }).expect(200);
+    await http.post('/api/auth/handoff/redeem').send({ code: stale.body.code }).expect(401);
+    // 改回去，免得影响后面的用例
+    await http.post('/api/auth/password').set(auth(changed.body.token)).send({ oldPassword: 'password-789', newPassword: 'password-123' }).expect(200);
+    // 鉴权通过后、签发前别的请求改了密码：按请求里核对过的旧版本签发会被拒，不会换到新版本的码
+    const svc = app.get(AuthService);
+    await expect(svc.issueHandoff(login.body.user.id, -1)).rejects.toThrow('登录已失效');
   });
 
   it('删除任务连带删除记录', async () => {

@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
-import { Link } from 'react-router';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router';
 import { api } from '../api/client';
 import type { TaskInfo } from '../api/types';
 import { Button, Card, Empty, ErrorText, Field, Input, TextArea } from '../ui';
@@ -20,27 +20,51 @@ const CONTENT_FIELDS: [string, string][] = [
 
 export function TasksPage() {
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => api<TaskInfo[]>('GET', '/api/tasks') });
+  // 从扩展「在控制台查看此题」进来时带 ?taskId=，定位到那一题
+  const focusId = Number(useSearchParams()[0].get('taskId')) || null;
+  // 列表只有最近更新的 200 题：要定位的题不在里面时单独取一次
+  const missing = !!focusId && !!tasks.data && !tasks.data.some((t) => t.taskId === focusId);
+  const extra = useQuery({
+    queryKey: ['task', focusId],
+    queryFn: () => api<TaskInfo>('GET', `/api/tasks/${focusId}`),
+    enabled: missing,
+  });
+  // 刷新失败（比如刚被删掉）时不再展示旧数据
+  const extraTask = missing && extra.data && !extra.isError ? extra.data : null;
+  const list = tasks.data ? (extraTask ? [extraTask, ...tasks.data] : tasks.data) : undefined;
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">阅卷任务</h1>
       <p className="text-sm text-slate-500">任务在扩展里阅卷时自动创建；这里可以修改评分标准和参考答案。考试名称和题号是任务的标识，改动请在阅卷页完成。</p>
       <ErrorText error={tasks.error} />
-      {tasks.data && tasks.data.length === 0 && <Empty text="还没有阅卷任务" />}
-      {tasks.data?.map((t) => (
-        <TaskCard key={t.taskId} task={t} />
+      {missing && extra.isError && (
+        <p className="text-sm text-amber-600" role="alert">找不到要查看的题（#{focusId}），可能已被删除或不属于当前账号。</p>
+      )}
+      {list && list.length === 0 && <Empty text="还没有阅卷任务" />}
+      {list?.map((t) => (
+        <TaskCard key={t.taskId} task={t} focused={t.taskId === focusId} />
       ))}
     </div>
   );
 }
 
-function TaskCard({ task }: { task: TaskInfo }) {
+function TaskCard({ task, focused = false }: { task: TaskInfo; focused?: boolean }) {
   const [editing, setEditing] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (focused) ref.current?.scrollIntoView?.({ block: 'start' });
+  }, [focused]);
   const qc = useQueryClient();
   const remove = useMutation({
     mutationFn: () => api('DELETE', `/api/tasks/${task.taskId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['tasks'] }),
+    onSuccess: () => {
+      // 单独取来的题也重新取：删掉后会 404，页面就不再把旧数据插回列表
+      qc.invalidateQueries({ queryKey: ['task', task.taskId] });
+      return qc.invalidateQueries({ queryKey: ['tasks'] });
+    },
   });
   return (
+    <div ref={ref} data-task={task.taskId} className={focused ? 'rounded-lg ring-2 ring-brand' : undefined}>
     <Card>
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -65,6 +89,7 @@ function TaskCard({ task }: { task: TaskInfo }) {
       <ErrorText error={remove.error} />
       {editing && <TaskEditor task={task} onDone={() => setEditing(false)} />}
     </Card>
+    </div>
   );
 }
 
@@ -74,6 +99,7 @@ function TaskEditor({ task, onDone }: { task: TaskInfo; onDone: () => void }) {
     mutationFn: (body: unknown) => api('PUT', '/api/tasks', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tasks'] });
+      qc.invalidateQueries({ queryKey: ['task', task.taskId] });
       onDone();
     },
   });

@@ -1,7 +1,7 @@
 /** 就绪视图：已有任务，等待评分（或全自动两份之间的间隔） */
 import { h } from 'preact';
 import type { TaskInfo } from '../../../shared/protocol';
-import { isAuto, judgeOnce, openTaskForm, resumeAuto, setMode } from '../controller';
+import { isAuto, judgeOnce, openConsole, openTaskForm, resumeAuto, setMode } from '../controller';
 import { committing, mode, sessionCount } from '../store';
 
 const fmt = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
@@ -20,6 +20,9 @@ export function ReadyView({ task }: Props) {
         <dt>题号</dt><dd>{task.exam.q_index}（{task.exam.subject}，满分 {fmt(Number(task.question.content.score ?? 0))}）</dd>
         <dt>本次</dt><dd>已阅 {sessionCount.value} 份</dd>
       </dl>
+      <p class="muted">
+        <button type="button" class="link" onClick={() => void openConsole(`/tasks?taskId=${task.taskId}`)}>在控制台查看此题</button>
+      </p>
       {running ? (
         // 全自动两份之间的间隔：只给停止，不给会再开一个循环的按钮
         <>

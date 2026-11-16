@@ -2,7 +2,7 @@
 import { h } from 'preact';
 import { useSignal } from '@preact/signals';
 import type { GradingInfo, TaskInfo } from '../../../shared/protocol';
-import { commitScore, confirmAndContinue, judgeOnce } from '../controller';
+import { commitScore, confirmAndContinue, judgeOnce, openConsole } from '../controller';
 import { autoPaused, committing, mode, notice, state } from '../store';
 
 const fmt = (n: number) => Number.isInteger(n) ? String(n) : n.toFixed(1);
@@ -72,6 +72,7 @@ export function ResultView({ task, result: r }: Props) {
         <span class={`conf ${confClass}`} title="模型对本次评分的把握程度">
           置信度 {Math.round(r.confidence * 100)}%
         </span>
+        <button type="button" class="link" title="在控制台查看这次评分的详情" onClick={() => void openConsole(`/records/${encodeURIComponent(r.gradingId)}`)}>详情</button>
       </div>
       {r.model === 'mock' && <div class="msg warn">服务端未配置模型，当前是 mock 分数，请勿用于真实阅卷</div>}
       {r.samples && r.samples.length > 1 && (

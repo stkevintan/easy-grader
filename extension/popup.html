@@ -67,6 +67,7 @@
       </div>
     </form>
     <div class="msg" id="login-msg" role="alert"></div>
+    <p class="muted"><button class="link" id="console-login" type="button">在控制台注册/登录</button></p>
 
     <div id="register-panel" hidden>
       <h3>注册账号</h3>
@@ -88,7 +89,7 @@
 
   <section id="account" hidden>
     <div style="display:flex;justify-content:space-between;align-items:baseline">
-      <div><div class="muted" id="who"></div><div><span class="credits" id="credits">0</span> <span class="muted">次可用</span></div></div>
+      <div><div class="muted" id="who"></div><div><button class="link credits" id="credits" type="button" title="在控制台查看额度流水">0</button> <span class="muted">次可用</span></div></div>
       <button class="link" id="logout" type="button">退出</button>
     </div>
     <form id="redeem-form" class="row">
@@ -96,6 +97,7 @@
       <button type="submit" style="flex:0 0 auto">兑换</button>
     </form>
     <div class="msg" id="redeem-msg" role="status"></div>
+    <div class="row"><button id="open-console" type="button">打开控制台</button></div>
   </section>
 
   <section id="page" hidden>

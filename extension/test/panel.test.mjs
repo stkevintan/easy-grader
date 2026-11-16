@@ -319,3 +319,39 @@ test('功能开关：开启全自动等开关刷新期间切回手动，刷新�
   assert.equal(p.store.mode.value, 'semi');
   assert.equal(p.store.autoPaused.value, false);
 });
+
+test('打开控制台的入口：就绪页「在控制台查看此题」、结果页「详情」都交给后台 console.open', async () => {
+  const { p, flush, click, sent } = await setup();
+  p.store.state.value = { view: 'ready', task };
+  await flush();
+  click('在控制台查看此题');
+  await flush();
+  // sent 里的对象来自 jsdom 窗口，先转成本地对象再比较
+  const opened = () => sent.filter((r) => r.cmd === 'console.open').map((r) => r.path);
+  assert.deepEqual(opened(), ['/tasks?taskId=t1']);
+
+  p.store.state.value = { view: 'result', task, result };
+  await flush();
+  click('详情');
+  await flush();
+  assert.deepEqual(opened(), ['/tasks?taskId=t1', '/records/g1']);
+});
+
+test('额度不足：提示旁有「去兑换」，点了在控制台打开额度页；其他错误没有这个按钮', async () => {
+  const { p, flush, click, buttons, sent } = await setup({
+    handlers: { 'judge.run': () => ({ ok: false, error: '评分次数不足，请兑换或联系管理员充值', status: 400 }) },
+  });
+  p.store.preset.value = { config: { pics: {}, questionNo: { fixed: true } } };
+  p.store.state.value = { view: 'ready', task };
+  // 直接给一张图，不走截图
+  await p.controller.judgeOnce(false, 'data:image/png;base64,AA==');
+  await flush();
+  assert.ok(buttons().includes('去兑换'), buttons().join(' | '));
+  click('去兑换');
+  await flush();
+  assert.deepEqual(sent.filter((r) => r.cmd === 'console.open').map((r) => r.path), ['/credits']);
+
+  p.store.setNotice('error', '别的错误');
+  await flush();
+  assert.ok(!buttons().includes('去兑换'));
+});
