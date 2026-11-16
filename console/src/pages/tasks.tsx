@@ -22,13 +22,24 @@ export function TasksPage() {
   const tasks = useQuery({ queryKey: ['tasks'], queryFn: () => api<TaskInfo[]>('GET', '/api/tasks') });
   // 从扩展「在控制台查看此题」进来时带 ?taskId=，定位到那一题
   const focusId = Number(useSearchParams()[0].get('taskId')) || null;
+  // 列表只有最近更新的 200 题：要定位的题不在里面时单独取一次
+  const missing = !!focusId && !!tasks.data && !tasks.data.some((t) => t.taskId === focusId);
+  const extra = useQuery({
+    queryKey: ['task', focusId],
+    queryFn: () => api<TaskInfo>('GET', `/api/tasks/${focusId}`),
+    enabled: missing,
+  });
+  const list = tasks.data ? (missing && extra.data ? [extra.data, ...tasks.data] : tasks.data) : undefined;
   return (
     <div className="flex flex-col gap-3">
       <h1 className="text-lg font-semibold">阅卷任务</h1>
       <p className="text-sm text-slate-500">任务在扩展里阅卷时自动创建；这里可以修改评分标准和参考答案。考试名称和题号是任务的标识，改动请在阅卷页完成。</p>
       <ErrorText error={tasks.error} />
-      {tasks.data && tasks.data.length === 0 && <Empty text="还没有阅卷任务" />}
-      {tasks.data?.map((t) => (
+      {missing && extra.isError && (
+        <p className="text-sm text-amber-600" role="alert">找不到要查看的题（#{focusId}），可能已被删除或不属于当前账号。</p>
+      )}
+      {list && list.length === 0 && <Empty text="还没有阅卷任务" />}
+      {list?.map((t) => (
         <TaskCard key={t.taskId} task={t} focused={t.taskId === focusId} />
       ))}
     </div>

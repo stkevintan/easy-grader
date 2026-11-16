@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import { AppModule } from '../src/app.module';
 import { loadConfig } from '../src/config';
 import { configureApp, isAllowedOrigin } from '../src/main';
+import { AuthService } from '../src/auth/auth.service';
 import { buildOcrPrompt, buildPrompt, extractJson, isBlankOcr, ModelOutputError, ModelService, parseVerdict, snapScore } from '../src/judge/model.service';
 import { pickGoldExamples } from '../src/judge/gold.service';
 import { hostMatches, normalizeHostPattern } from '../src/adapters/adapter-config';
@@ -427,6 +428,9 @@ describe('Easy Grader server (e2e)', () => {
     await http.post('/api/auth/handoff/redeem').send({ code: stale.body.code }).expect(401);
     // 改回去，免得影响后面的用例
     await http.post('/api/auth/password').set(auth(changed.body.token)).send({ oldPassword: 'password-789', newPassword: 'password-123' }).expect(200);
+    // 鉴权通过后、签发前别的请求改了密码：按请求里核对过的旧版本签发会被拒，不会换到新版本的码
+    const svc = app.get(AuthService);
+    await expect(svc.issueHandoff(login.body.user.id, -1)).rejects.toThrow('登录已失效');
   });
 
   it('删除任务连带删除记录', async () => {

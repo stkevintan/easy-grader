@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
-import { ApiError, api, session } from '../api/client';
+import { ApiError, session } from '../api/client';
 import type { User } from '../api/types';
 import { Button, Card } from '../ui';
 
@@ -25,10 +25,25 @@ async function redeem(code: string): Promise<{ token: string; user: User }> {
   return { token: data.token, user: data.user };
 }
 
+/**
+ * 控制台当前登录的账号。只有明确的 401（登录已失效）才算没有登录；
+ * 网络故障、5xx 等抛错，由调用方保留原登录并提示，不能当成没登录直接切换。
+ * 也不走 api()：它遇到 401 会跳去登录页。
+ */
+async function currentUser(token: string): Promise<User | null> {
+  const res = await fetch('/api/auth/me', { headers: { authorization: `Bearer ${token}` } });
+  if (res.status === 401) return null;
+  if (!res.ok) throw new ApiError(res.status, `无法确认控制台当前登录的账号（${res.status}），已保留当前登录，请稍后从扩展重新打开`);
+  return (await res.json()) as User;
+}
+
+/** 处理过的码：StrictMode 下 effect 会跑两次，码只能用一次，同一个码只换一回 */
+const handled = new Set<string>();
+
 type State =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
-  | { kind: 'conflict'; current: User; next: { token: string; user: User } };
+  | { kind: 'error'; message: string; to: string }
+  | { kind: 'conflict'; current: User; next: { token: string; user: User }; to: string };
 
 /**
  * 从扩展打开控制台：#/handoff?code=…&to=/credits
@@ -39,32 +54,43 @@ export function HandoffPage() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [state, setState] = useState<State>({ kind: 'loading' });
-  const started = useRef(false);
+  // 每个新的交接地址开始处理时 +1；旧请求回来时发现代数变了就作废
+  const generation = useRef(0);
+  const code = params.get('code') ?? '';
   const to = safeTarget(params.get('to'));
 
-  const finish = (token: string, user: User) => {
+  const finish = (token: string, user: User, target: string) => {
     session.set(token);
     qc.clear();
     qc.setQueryData(['me'], user);
-    navigate(to, { replace: true });
+    navigate(target, { replace: true });
   };
 
+  // 扩展复用已开的控制台标签页时只改 hash，这个页面会被复用：按每个新的码重新处理
   useEffect(() => {
-    // StrictMode 下 effect 会跑两次；码只能用一次，只换一回
-    if (started.current) return;
-    started.current = true;
-    const code = params.get('code') ?? '';
+    if (!code) {
+      if (generation.current === 0) setState({ kind: 'error', message: '链接里没有交接码', to });
+      return;
+    }
     // 换码之前先把码从地址栏和历史里去掉
     history.replaceState(null, '', `${location.pathname}${location.search}#/handoff`);
+    if (handled.has(code)) return;
+    handled.add(code);
+    const gen = ++generation.current;
+    const stillCurrent = () => gen === generation.current;
+    setState({ kind: 'loading' });
     (async () => {
-      if (!code) throw new Error('链接里没有交接码');
       const next = await redeem(code);
-      const current = session.token() ? await api<User>('GET', '/api/auth/me').catch(() => null) : null;
-      if (current && current.id !== next.user.id) setState({ kind: 'conflict', current, next });
-      else finish(next.token, next.user);
-    })().catch((e: unknown) => setState({ kind: 'error', message: e instanceof Error ? e.message : String(e) }));
+      const token = session.token();
+      const current = token ? await currentUser(token) : null;
+      if (!stillCurrent()) return;
+      if (current && current.id !== next.user.id) setState({ kind: 'conflict', current, next, to });
+      else finish(next.token, next.user, to);
+    })().catch((e: unknown) => {
+      if (stillCurrent()) setState({ kind: 'error', message: e instanceof Error ? e.message : String(e), to });
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [code, to]);
 
   return (
     <div className="flex min-h-full items-center justify-center bg-slate-50 p-6 dark:bg-slate-950">
@@ -75,7 +101,7 @@ export function HandoffPage() {
             <div className="flex flex-col gap-3">
               <p className="text-sm text-red-600" role="alert">{state.message}</p>
               <div className="flex gap-2">
-                <Button variant="primary" onClick={() => navigate(session.token() ? to : '/login', { replace: true })}>
+                <Button variant="primary" onClick={() => navigate(session.token() ? state.to : '/login', { replace: true })}>
                   {session.token() ? '继续使用当前账号' : '去登录'}
                 </Button>
               </div>
@@ -87,10 +113,10 @@ export function HandoffPage() {
                 控制台当前登录的是 <b>{state.current.username}</b>，扩展里登录的是 <b>{state.next.user.username}</b>。要切换吗？
               </p>
               <div className="flex flex-wrap gap-2">
-                <Button variant="primary" onClick={() => finish(state.next.token, state.next.user)}>
+                <Button variant="primary" onClick={() => finish(state.next.token, state.next.user, state.to)}>
                   切换到 {state.next.user.username}
                 </Button>
-                <Button onClick={() => navigate(to, { replace: true })}>保持 {state.current.username}</Button>
+                <Button onClick={() => navigate(state.to, { replace: true })}>保持 {state.current.username}</Button>
               </div>
             </div>
           )}

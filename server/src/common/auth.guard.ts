@@ -18,6 +18,8 @@ export interface AuthUser {
   id: number;
   username: string;
   role: 'user' | 'admin';
+  /** 这次请求的 JWT 里、已经和数据库核对过的 tokenVersion */
+  tokenVersion: number;
 }
 
 export interface JwtPayload {
@@ -68,7 +70,7 @@ export class AuthGuard implements CanActivate {
     if (!user || user.tokenVersion !== payload.ver) throw new UnauthorizedException('登录已失效，请重新登录');
     if (user.disabled) throw new ForbiddenException('账号已被停用');
 
-    req.user = { id: user.id, username: user.username, role: user.role };
+    req.user = { id: user.id, username: user.username, role: user.role, tokenVersion: payload.ver };
     if (this.reflector.getAllAndOverride<boolean>(ADMIN_KEY, targets) && user.role !== 'admin') {
       throw new ForbiddenException('需要管理员权限');
     }

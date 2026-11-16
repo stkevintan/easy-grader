@@ -54,7 +54,7 @@ export class AuthController {
   @HttpCode(200)
   @Post('auth/handoff')
   handoff(@CurrentUser() u: AuthUser) {
-    return this.auth.issueHandoff(u.id);
+    return this.auth.issueHandoff(u.id, u.tokenVersion);
   }
 
   @Public()

@@ -124,9 +124,16 @@ export class AuthService implements OnApplicationBootstrap {
   }
 
   /** 扩展用当前登录换一个一次性交接码 */
-  async issueHandoff(userId: number) {
-    const user = await this.users.findOneByOrFail({ id: userId });
-    return this.handoffs.issue(user.id, user.tokenVersion);
+  /**
+   * tokenVersion 用这次请求的 JWT 里、鉴权时核对过的版本，不重新读库：
+   * 鉴权之后、这里之前别的请求改了密码时，旧登录不能借此换到新版本的码
+   */
+  async issueHandoff(userId: number, tokenVersion: number) {
+    const user = await this.users.findOneBy({ id: userId });
+    if (!user || user.disabled || user.tokenVersion !== tokenVersion) {
+      throw new UnauthorizedException('登录已失效，请重新登录');
+    }
+    return this.handoffs.issue(user.id, tokenVersion);
   }
 
   /** 控制台用交接码换自己的 JWT；码签发后改过密码或被停用都作废 */
