@@ -29,16 +29,12 @@ export function configureApp(app: INestApplication, cfg: AppConfig) {
     new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true, stopAtFirstError: true }),
   );
 
-  // 管理后台（admin/，无构建步骤）与本地演示阅卷页。
-  // 默认在仓库根目录找（server/dist 往上两级）；Docker 镜像里通过 ADMIN_DIR / DEMO_DIR 指定
+  // 控制台（console/dist，Vite 构建产物）与本地演示阅卷页。
+  // 默认在仓库根目录找（server/dist 往上两级）；Docker 镜像里通过 CONSOLE_DIR / DEMO_DIR 指定
   const root = resolve(__dirname, '..', '..');
   const express = ex.getHttpAdapter().getInstance() as Express;
-  const admin = cfg.adminDir || join(root, 'admin');
-  if (existsSync(join(admin, 'index.html'))) {
-    ex.useStaticAssets(admin, { prefix: '/admin/', index: 'index.html' });
-    express.get('/admin', (_req, res) => res.redirect('/admin/'));
-  }
-  // 新控制台（console/dist，Vite 构建产物）。P2 之前 /admin 仍指向旧后台
+  // 旧管理后台已并入控制台；老书签 /admin、/admin/* 一律跳到控制台的系统管理
+  express.get(/^\/admin(\/.*)?$/, (_req, res) => res.redirect(302, '/console/#/admin'));
   const consoleDir = cfg.consoleDir || join(root, 'console', 'dist');
   if (existsSync(join(consoleDir, 'index.html'))) {
     ex.useStaticAssets(consoleDir, { prefix: '/console/', index: 'index.html' });
@@ -59,7 +55,7 @@ async function bootstrap() {
   const base = `http://${cfg.host === '0.0.0.0' ? 'localhost' : cfg.host}:${cfg.port}`;
   const log = new Logger('Bootstrap');
   log.log(`服务已启动：${base}/api/health`);
-  log.log(`管理后台：${base}/admin/    演示阅卷页：${base}/demo/`);
+  log.log(`控制台：${base}/console/    演示阅卷页：${base}/demo/`);
   if (cfg.host !== '127.0.0.1' && cfg.host !== 'localhost')
     log.warn('服务监听在非本机地址，请务必放在 HTTPS 反向代理之后，并设置 ADMIN_PASSWORD / JWT_SECRET');
 }

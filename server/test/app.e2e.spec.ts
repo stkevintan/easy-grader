@@ -61,6 +61,14 @@ describe('Easy Grader server (e2e)', () => {
     expect(r.body.version).toBe(require('../package.json').version);
   });
 
+  it('旧后台地址 /admin、/admin/* 跳到控制台的系统管理', async () => {
+    for (const p of ['/admin', '/admin/', '/admin/index.html']) {
+      const r = await http.get(p).expect(302);
+      expect(r.headers.location).toBe('/console/#/admin');
+    }
+    // /api/admin 不受影响
+    await http.get('/api/admin/stats').expect(401);
+  });
 
   it('未登录访问受保护接口返回 401', async () => {
     await http.get('/api/auth/me').expect(401);

@@ -10,6 +10,6 @@
     "build:dev": "pnpm --filter easy-grader-server run build && pnpm --filter easy-grader-extension run build:dev",
     "dev": "pnpm --filter easy-grader-server run dev",
     "test": "pnpm --filter easy-grader-server --filter easy-grader-extension --filter easy-grader-console run test",
-    "test:e2e": "pnpm run build:dev && pnpm --filter easy-grader-e2e run test"
+    "test:e2e": "pnpm run build:dev && pnpm --filter easy-grader-console run build && pnpm --filter easy-grader-e2e run test"
   }
 }

@@ -71,11 +71,12 @@ export function Empty({ text }: { text: string }) {
   return <p className="py-8 text-center text-sm text-slate-500">{text}</p>;
 }
 
-export function Stat({ label, value }: { label: string; value: string }) {
+export function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
       <div className="text-xs text-slate-500">{label}</div>
       <div className="mt-1 text-2xl font-semibold">{value}</div>
+      {hint && <div className="mt-1 text-xs text-slate-400">{hint}</div>}
     </div>
   );
 }
