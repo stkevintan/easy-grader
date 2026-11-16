@@ -120,7 +120,10 @@ interface Rubric {
 确认接口 `POST /api/records/:id/confirm` 只新增字段，不改原有的：
 
 - `modifiedScore` 从必填改为「和 `points` 至少传一个」，其他校验不变。旧扩展一直会传 `modifiedScore`，不受影响。
-- 新扩展提交逐点得分时，**同时**带上自己算出的 `modifiedScore`。这样连到还没升级的服务端时，旧服务端忽略不认识的 `points`，照样按总分保存，不会因为缺 `modifiedScore` 报错。
+- 服务端开着 `forbidNonWhitelisted`（`server/src/main.ts`），不认识的字段会直接返回 400，所以**不能**靠「旧服务端忽略 `points`」来兼容。改为按服务端能力决定发什么：
+  - 这条记录的 `GradingInfo` 带有 `rubric`（只有支持要点评分的服务端才会返回）时，扩展发 `points` 加上自己算出的 `modifiedScore`。
+  - 没有 `rubric` 时（旧服务端，或这道题没有要点列表），只发原有的 `modifiedScore` 和 `isAuto`，面板也不显示逐点区。
+  - 「直接打分」同理：只有任务信息里带 `rubricPoints` 时才显示这个按钮。
 - 新增可选的 `points: [{ id, score }]`。传了 `points` 时，服务端按这条记录的 `rubricSnapshot` 校验并重新算总分（要点列表在评分之后改过也一样，用的是快照）：
   - id 必须都在快照里，每个 id 最多一次；没传的点按 0 分。
   - 每点得分在 0 到该点分值之间，并且是步长的整数倍；`allowPartial` 为 false 的点只能是 0 或满分。
@@ -193,7 +196,7 @@ interface Rubric {
 
 - `/api` 只新增字段，不改已有字段：`GradingInfo` 加 `points`、`rubric`，确认接口加可选的 `points`，任务接口加 `rubricPoints`。旧扩展忽略这些新字段，照旧按总分确认；全自动下遇到需要老师确认的要点，由服务端返回 403 让它停下（第 5 节）。
 - 旧任务没有要点列表时，提示词、解析、面板和确认接口的校验都和 0.3.0 一样。本设计新增的校验（步长整数倍、逐点拦截全自动）只作用在带 `rubricSnapshot` / `aiPoints` 的记录上。
-- 新扩展遇到旧服务端（没有 `points` 字段）时，不显示逐点区。
+- 新扩展遇到旧服务端时，`GradingInfo` 里没有 `rubric`，扩展就不显示逐点区，确认时也不发 `points`（旧服务端会以 400 拒绝不认识的字段，见第 5 节）。
 - 加一个功能开关 `point_grading`（默认关）：先给部分用户或组织打开，看各点的改判率，再全量。
 
 ## 9. 分期
