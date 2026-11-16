@@ -123,7 +123,7 @@ interface Rubric {
 - 服务端开着 `forbidNonWhitelisted`（`server/src/main.ts`），不认识的字段会直接返回 400，所以**不能**靠「旧服务端忽略 `points`」来兼容。改为按服务端能力决定发什么：
   - 这条记录的 `GradingInfo` 带有 `rubric`（只有支持要点评分的服务端才会返回）时，扩展发 `points` 加上自己算出的 `modifiedScore`。
   - 没有 `rubric` 时（旧服务端，或这道题没有要点列表），只发原有的 `modifiedScore` 和 `isAuto`，面板也不显示逐点区。
-  - 「直接打分」同理：只有任务信息里带 `rubricPoints` 时才显示这个按钮。
+  - 「直接打分」同理：只有任务信息里带 `rubricPoints`、并且它**已确认且当前生效**（`confirmedAt` 不为空）时才显示这个按钮。草稿、或因改了满分/步长退回「待确认」的列表都不显示。
 - 新增可选的 `points: [{ id, score }]`。传了 `points` 时，服务端按这条记录的 `rubricSnapshot` 校验并重新算总分（要点列表在评分之后改过也一样，用的是快照）：
   - id 必须都在快照里，每个 id 最多一次；没传的点按 0 分。
   - 每点得分在 0 到该点分值之间，并且是步长的整数倍；`allowPartial` 为 false 的点只能是 0 或满分。
@@ -162,8 +162,9 @@ interface Rubric {
 
 「直接打分」提交时没有 AI 记录，需要新接口 `POST /api/records/manual { taskId, image, rubricVersion, points?, modifiedScore? }`，建一条 `status=manual` 的记录。
 
-- `rubricVersion` 是面板打开逐点表单时拿到的要点列表版本。服务端在同一个事务里核对它和任务当前的版本：
-  - 一致：用这一版生成 `rubricSnapshot`，按它校验和算分。
+- `rubricVersion` 是面板打开逐点表单时拿到的要点列表版本。服务端在同一个事务里核对两件事：要点列表已确认且当前生效，并且版本和请求里的一致。
+  - 没有要点列表，或要点列表未确认、已退回「待确认」：返回 409「这道题的要点列表还没确认，不能直接打分」，不建记录。
+  - 版本一致：用这一版生成 `rubricSnapshot`，按它校验和算分。
   - 不一致（比如老师打分期间在另一个窗口改了分值或汇总规则）：返回 409「要点列表已更新，请重新加载后再打分」，不建记录。这样快照就一定是老师打分时看到的那一版。
 - `points` 和 `modifiedScore` 的规则和确认接口完全一样：
 - 只传 `points`：按快照校验并算总分。
