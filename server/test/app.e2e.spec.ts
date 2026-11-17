@@ -204,6 +204,18 @@ describe('Easy Grader server (e2e)', () => {
     expect(h.body.model).toBe('mock');
   });
 
+  it('只在环境变量里的方案也能测试读图，结果会落库', async () => {
+    // 复位之后 default 没有数据库行，测试不应该 404
+    const r = await http.post('/api/admin/model/default/test').set(auth(adminToken)).expect(201);
+    expect(r.body).toMatchObject({ name: 'default', vision: { ok: true, error: '' } });
+    const list = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    expect(list.body.profiles.find((p: { name: string }) => p.name === 'default').vision.ok).toBe(true);
+    // 只落了视觉结果，模型配置仍沿用环境变量（测试环境没有 key，所以还是 mock）
+    const health = await http.get('/api/health').expect(200);
+    expect(health.body.model).toBe('mock');
+    await http.post('/api/admin/model/default/reset').set(auth(adminToken)).expect(201);
+  });
+
   it('演示页适配预设已写入并可按 host+path 解析', async () => {
     const r = await http.get('/api/adapters/resolve').query({ host: 'localhost:3000', path: '/demo/index.html' }).set(auth(userToken)).expect(200);
     expect(r.body.preset?.config.scoreMode).toBe('input');

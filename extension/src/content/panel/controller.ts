@@ -307,7 +307,9 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
       state.value = { view: 'ready', task };
       return true;
     }
-    if (await pageMoved(400)) {
+    const moved = await pageMoved(400);
+    if (cancel?.aborted) return false;
+    if (moved) {
       // 写分时平台已经自己提交并翻页了，不要再点一次提交按钮（会提交到下一份答卷上）
       sessionCount.value += 1;
       setNotice('ok', `已写入 ${fmt(score)} 分，平台已自动跳到下一份`);

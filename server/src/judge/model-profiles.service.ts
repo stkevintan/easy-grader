@@ -205,9 +205,9 @@ export class ModelProfilesService implements OnModuleInit {
   async test(name: string): Promise<ProfileView> {
     if (!this.has(name)) throw new NotFoundException('模型方案不存在');
     const probe = await this.vision.probe(this.config(name));
-    // 探测期间别人可能改了/删了这个方案：只把视觉结果写到当前这一行，别整行覆盖
-    const fresh = await this.repo.findOneBy({ name });
-    if (!fresh) throw new NotFoundException('模型方案在处理过程中被删除');
+    // 探测期间别人可能改了这个方案：只把视觉结果写到当前这一行，别整行覆盖。
+    // 只在环境变量里定义的方案（含 default）还没有行，测试后把结果落库，下次打开页面能看到
+    const fresh = (await this.repo.findOneBy({ name })) ?? this.repo.create({ name });
     fresh.visionOk = probe.ok;
     fresh.visionError = probe.error;
     fresh.visionCheckedAt = new Date();
