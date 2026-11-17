@@ -279,6 +279,24 @@ docker compose up -d
 
 `docker-compose.yml` 只把端口绑在 `127.0.0.1:3000`，前面需要用 Nginx 或 Caddy 做 HTTPS 反向代理。数据在名为 `easy-grader-data` 的卷里，备份时复制卷中的 `app.db` 即可（先停容器，或者用 `sqlite3 .backup`）。
 
+**发布（更新到新版本）**：
+
+```bash
+sudo ./server/scripts/deploy.sh           # 备份 → 拉镜像 → 重建 → 查健康，失败自动回滚
+sudo ./server/scripts/deploy.sh check     # 只看现状（版本、镜像、健康、env 是否真的进了容器）
+sudo ./server/scripts/deploy.sh rollback  # 回到上一次发布前的镜像
+```
+
+`docker compose restart` 和 1Panel 的「重启」都**不会**重读 `env_file`，改了 `.env` 只重启的话容器里还是旧值。发布脚本统一用 `up -d --force-recreate`，并在发布后逐项核对（含 `MODEL_API_KEY` 是否进了容器、health 里的 model 是不是 `mock`），所以服务器上更新请走它。
+
+需要让别的机器（比如一台 agent）也能发布、但不给它 shell 时，在它的 `~/.ssh/authorized_keys` 里挂一个受限入口：
+
+```
+command="/usr/local/bin/easy-grader-remote",restrict ssh-ed25519 AAAA...
+```
+
+`easy-grader-remote` 只把 `deploy` / `check` / `backup` / `rollback` 透传给发布脚本，其他参数直接拒绝。
+
 ## 系统管理（控制台）
 
 管理员登录控制台后左侧多一组「系统管理」：
@@ -291,6 +309,7 @@ docker compose up -d
 - 额度流水：每一次加减的来源
 - 组织：建、改名、停用，看成员和成员的用量；邀请令牌可以带组织，注册后自动加入
 - 功能开关：按全局 / 百分比 / 组织 / 用户改开关取值，带修改记录（见下）
+- 模型：看当前在用的模型、接口地址、是否配了密钥、参数和近 7 天各模型的评分量；模型名、地址、密钥和几个参数可以直接改，保存后立即生效（存在数据库里，优先于环境变量，可一键恢复）
 
 ## 功能开关
 
