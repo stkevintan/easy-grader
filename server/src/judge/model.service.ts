@@ -308,6 +308,8 @@ export class ModelService implements OnModuleInit {
 
     const started = Date.now();
     const goldExamples = examples.map((e) => ({ recordId: e.recordId, score: e.score }));
+    // 评分过程中管理员可能改方案；trace 记的是这次真正使用的配置
+    const modelSnapshot = { name: m.name, temperature: m.temperature, maxTokens: m.maxTokens, reasoningEffort: m.reasoningEffort || '' };
     let prompt = '';
     let attempts = 0;
     let ocr: TraceInput['ocr'] | undefined;
@@ -360,6 +362,7 @@ export class ModelService implements OnModuleInit {
             prompt: '',
             promptVersion: PROMPT_VERSION,
         modelProfile: profile,
+            modelSnapshot,
             goldExamples,
             attempts,
             latencyMs: Date.now() - started,
@@ -421,6 +424,7 @@ export class ModelService implements OnModuleInit {
         prompt,
         promptVersion: PROMPT_VERSION,
         modelProfile: profile,
+            modelSnapshot,
         goldExamples,
         attempts,
         latencyMs: Date.now() - started,
@@ -454,6 +458,7 @@ export class ModelService implements OnModuleInit {
         prompt,
         promptVersion: PROMPT_VERSION,
         modelProfile: profile,
+            modelSnapshot,
         goldExamples,
         attempts,
         latencyMs: Date.now() - started,

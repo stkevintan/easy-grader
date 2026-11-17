@@ -56,6 +56,8 @@ export interface TraceInput {
   promptVersion?: number;
   /** 功能开关 model_profile 选中的模型方案 */
   modelProfile?: string;
+  /** 评分开始时的模型快照；评分过程中管理员改了方案，trace 里仍记当时真正用的配置 */
+  modelSnapshot?: { name: string; temperature: number; maxTokens: number; reasoningEffort: string };
   /** 提示词里引用的老师确认示例（只有 recordId 和分数，文字已在 prompt 里） */
   goldExamples?: { recordId: number; score: number }[];
   /** 两阶段评分的第一阶段：纯转录 */

@@ -162,7 +162,31 @@ describe('Easy Grader server (e2e)', () => {
     // 地址不合法直接拒绝
     await http.put('/api/admin/model/default').set(auth(adminToken)).send({ baseUrl: 'not a url' }).expect(400);
 
+    // 尾部斜杠应被规范化（否则评分时拼出 //chat/completions）
+    const slash = await http
+      .put('/api/admin/model/fast')
+      .set(auth(adminToken))
+      .send({ model: 'ui-model-fast', baseUrl: 'https://example.com/v1/', apiKey: 'sk-test-key', reasoningEffort: 'none' })
+      .expect(200);
+    const slashFast = slash.body.profiles.find((p: { name: string }) => p.name === 'fast');
+    expect(slashFast.baseUrl).toBe('https://example.com/v1');
+    // 没有单独设转录强度时，继承这个方案实际的打分强度
+    expect(slashFast.params.ocrReasoningEffort).toBe('none');
+    // 恢复一个非默认方案：model/baseUrl 是非空列，不能因为写 null 而 500
+    const resetFast = await http.post('/api/admin/model/fast/reset').set(auth(adminToken)).expect(201);
+    expect(resetFast.body.profiles.find((p: { name: string }) => p.name === 'fast')).toMatchObject({ model: '', overrides: [] });
+
     await http.delete('/api/admin/model/fast').set(auth(adminToken)).expect(200);
+    // 探测失败的保存不能改掉线上正在用的配置（缓存里不能先被清空）
+    await http
+      .put('/api/admin/model/default')
+      .set(auth(adminToken))
+      .send({ model: 'no-vision', apiKey: '' })
+      .expect(400);
+    const afterFail = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    const defAfterFail = afterFail.body.profiles.find((p: { name: string }) => p.name === 'default');
+    expect(defAfterFail).toMatchObject({ model: 'ui-model-2', apiKeyConfigured: true });
+
     await http.post('/api/admin/model/default/reset').set(auth(adminToken)).expect(201);
     h = await http.get('/api/health').expect(200);
     expect(h.body.model).toBe('mock');
@@ -401,6 +425,9 @@ describe('Easy Grader server (e2e)', () => {
     const mine = presets.body.find((p: any) => p.name === 'mine');
     const pub = await http.patch(`/api/admin/presets/${mine.id}`).set(auth(adminToken)).send({ scope: 'public' }).expect(200);
     expect(pub.body).toMatchObject({ scope: 'public', ownerId: null });
+    // 改名的字段名是 name：控制台每次编辑都会带上它，不能被当成多余字段拒掉
+    await http.patch(`/api/admin/presets/${mine.id}`).set(auth(adminToken)).send({ name: 'mine2' }).expect(200);
+    await http.patch(`/api/admin/presets/${mine.id}`).set(auth(adminToken)).send({ name: 'mine' }).expect(200);
     // 公开后其他用户也能解析到
     const other = await http.post('/api/auth/login').send({ username: '王老师', password: 'password-123' }).expect(200);
     const o = await http.get('/api/adapters/resolve').query({ host: 'xiaoxianai.cn', path: '/' }).set(auth(other.body.token)).expect(200);

@@ -38,7 +38,7 @@ class UpdateModelDto {
   @IsOptional() @IsIn(['', 'none', 'minimal', 'low', 'medium', 'high']) ocrReasoningEffort?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(5) sampleCount?: number;
   @IsOptional() @IsBoolean() scoreWithImage?: boolean;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(1000) @Max(600_000) timeoutMs?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1000) @Max(120_000) timeoutMs?: number;
 }
 
 class CreateUserDto {
@@ -98,7 +98,7 @@ class PresetDto {
 }
 
 class PresetPatchDto {
-  @IsOptional() @IsString() @MaxLength(100) model?: string;
+  @IsOptional() @IsString() @MaxLength(100) name?: string;
   @IsOptional() @IsString() @MaxLength(255) hostPattern?: string;
   @IsOptional() @IsString() @MaxLength(200) pathPattern?: string;
   @IsOptional() @IsObject() config?: AdapterConfig;

@@ -95,7 +95,7 @@ export class ModelProfilesService implements OnModuleInit {
     const row = this.rows.get(name);
     if (row) {
       if (row.model) out.name = row.model;
-      if (row.baseUrl) out.baseUrl = row.baseUrl;
+      if (row.baseUrl) out.baseUrl = row.baseUrl.replace(/\/+$/, '');
       if (row.apiKey != null) out.apiKey = row.apiKey;
       if (row.temperature != null) out.temperature = row.temperature;
       if (row.maxTokens != null) out.maxTokens = row.maxTokens;
@@ -105,13 +105,21 @@ export class ModelProfilesService implements OnModuleInit {
       if (row.scoreWithImage != null) out.scoreWithImage = row.scoreWithImage;
       if (row.timeoutMs != null) out.timeoutMs = row.timeoutMs;
     }
+    out.baseUrl = (out.baseUrl || '').replace(/\/+$/, '');
+    // 转录强度：显式设置优先，否则继承这个方案实际的打分强度（不是全局的）
+    const explicitOcr =
+      (row?.ocrReasoningEffort as ModelConfig['ocrReasoningEffort'] | null) ??
+      (name !== 'default' ? this.cfg.modelProfiles[name]?.ocrReasoningEffort : undefined);
+    out.ocrReasoningEffort = explicitOcr ?? out.reasoningEffort;
     return out;
   }
 
   view(name: string): ProfileView {
     const m = this.config(name);
     const row = this.rows.get(name);
-    const overrides = row ? PROFILE_FIELDS.filter((k) => row[k] != null).map(String) : [];
+    const overrides = row
+      ? PROFILE_FIELDS.filter((k) => (k === 'model' || k === 'baseUrl' ? row[k] != null && row[k] !== '' : row[k] != null))
+      : [];
     return {
       name,
       model: m.name,
@@ -121,7 +129,7 @@ export class ModelProfilesService implements OnModuleInit {
         temperature: m.temperature,
         maxTokens: m.maxTokens,
         reasoningEffort: m.reasoningEffort || '',
-        ocrReasoningEffort: m.ocrReasoningEffort === '' ? '' : m.ocrReasoningEffort,
+        ocrReasoningEffort: m.ocrReasoningEffort ?? '',
         sampleCount: m.sampleCount,
         scoreWithImage: m.scoreWithImage,
         timeoutMs: m.timeoutMs,
@@ -140,13 +148,14 @@ export class ModelProfilesService implements OnModuleInit {
   /** 保存方案；改过模型/地址/密钥或第一次保存时先做视觉探测，探测不过直接拒绝 */
   async save(name: string, patch: ProfilePatch, actor: { id: number; name: string }): Promise<void> {
     if (!/^[\w.-]{1,40}$/.test(name)) throw new BadRequestException('方案名只能是字母、数字、下划线、点和短横线');
-    const row = this.rows.get(name) ?? this.repo.create({ name });
-    const before = this.config(name);
-    const next: ModelConfig = { ...before };
+    const existing = this.rows.get(name);
+    // 在副本上改，探测通过、落库成功之后才更新缓存：探测失败时线上配置不能被动过
+    const row: ModelProfile = existing ? ({ ...existing } as ModelProfile) : this.repo.create({ name });
+    const next: ModelConfig = { ...this.config(name) };
 
     if (patch.model !== undefined) next.name = patch.model.trim();
-    if (patch.baseUrl !== undefined) next.baseUrl = patch.baseUrl.trim();
-    if (patch.apiKey !== undefined && patch.apiKey !== '') next.apiKey = patch.apiKey.trim();
+    if (patch.baseUrl !== undefined) next.baseUrl = patch.baseUrl.trim().replace(/\/+$/, '');
+    if (patch.apiKey !== undefined) next.apiKey = patch.apiKey === '' ? this.cfg.model.apiKey : patch.apiKey.trim();
     if (patch.temperature !== undefined) next.temperature = patch.temperature;
     if (patch.maxTokens !== undefined) next.maxTokens = patch.maxTokens;
     if (patch.reasoningEffort !== undefined) next.reasoningEffort = patch.reasoningEffort as ModelConfig['reasoningEffort'];
@@ -155,10 +164,10 @@ export class ModelProfilesService implements OnModuleInit {
     if (patch.scoreWithImage !== undefined) next.scoreWithImage = patch.scoreWithImage;
     if (patch.timeoutMs !== undefined) next.timeoutMs = patch.timeoutMs;
 
-    if (patch.baseUrl !== undefined && patch.baseUrl.trim() !== '') {
+    if (patch.baseUrl !== undefined && next.baseUrl !== '') {
       let url: URL;
       try {
-        url = new URL(patch.baseUrl.trim());
+        url = new URL(next.baseUrl);
       } catch {
         throw new BadRequestException('接口地址不是合法的 URL，例如 https://api.deepseek.com');
       }
@@ -166,29 +175,18 @@ export class ModelProfilesService implements OnModuleInit {
     }
     if (!next.name || !next.baseUrl || !next.apiKey) throw new BadRequestException('模型名、接口地址、API Key 都必须有值（可以沿用环境变量）');
 
-    // 允许清空密钥退回环境变量
-    if (patch.apiKey === '') {
-      next.apiKey = this.cfg.model.apiKey;
-      if (row.apiKey !== null) row.apiKey = null;
-    }
-
     const changed = patch.model !== undefined || patch.baseUrl !== undefined || patch.apiKey !== undefined || !row.visionOk;
     if (changed) {
       const probe = await this.vision.probe(next);
-      if (!probe.ok) {
-        row.visionOk = false;
-        row.visionError = probe.error;
-        row.visionCheckedAt = new Date();
-        throw new BadRequestException(`这个模型不能读图，没有保存：${probe.error}`);
-      }
-      row.visionOk = true;
-      row.visionError = '';
+      row.visionOk = probe.ok;
+      row.visionError = probe.error;
       row.visionCheckedAt = new Date();
+      if (!probe.ok) throw new BadRequestException(`这个模型不能读图，没有保存：${probe.error}`);
     }
 
-    if (patch.model !== undefined) row.model = patch.model.trim();
-    if (patch.baseUrl !== undefined) row.baseUrl = patch.baseUrl.trim();
-    if (patch.apiKey !== undefined && patch.apiKey !== '') row.apiKey = patch.apiKey.trim();
+    if (patch.model !== undefined) row.model = next.name;
+    if (patch.baseUrl !== undefined) row.baseUrl = next.baseUrl;
+    if (patch.apiKey !== undefined) row.apiKey = patch.apiKey === '' ? null : next.apiKey;
     if (patch.temperature !== undefined) row.temperature = patch.temperature;
     if (patch.maxTokens !== undefined) row.maxTokens = patch.maxTokens;
     if (patch.reasoningEffort !== undefined) row.reasoningEffort = patch.reasoningEffort;
@@ -205,7 +203,8 @@ export class ModelProfilesService implements OnModuleInit {
   /** 重新探测一个方案，把结果写回去 */
   async test(name: string): Promise<ProfileView> {
     if (!this.has(name)) throw new NotFoundException('模型方案不存在');
-    const row = this.rows.get(name) ?? this.repo.create({ name });
+    const existing = this.rows.get(name);
+    const row: ModelProfile = existing ? ({ ...existing } as ModelProfile) : this.repo.create({ name });
     const probe = await this.vision.probe(this.config(name));
     row.visionOk = probe.ok;
     row.visionError = probe.error;
@@ -230,7 +229,13 @@ export class ModelProfilesService implements OnModuleInit {
     if (name === 'default') {
       await this.repo.remove(row);
     } else {
-      for (const k of PROFILE_FIELDS) (row as unknown as Record<string, unknown>)[k] = null;
+      // model / baseUrl 是非空列，回退时写成空串（等价于「沿用环境变量」）；其余可空
+      row.model = '';
+      row.baseUrl = '';
+      for (const k of PROFILE_FIELDS) {
+        if (k === 'model' || k === 'baseUrl') continue;
+        (row as unknown as Record<string, unknown>)[k] = null;
+      }
       await this.repo.save(row);
     }
     await this.reload();

@@ -59,9 +59,18 @@ export class VisionService {
       }
       let reply = '';
       try {
-        const data = JSON.parse(text) as { choices?: { message?: { content?: string; reasoning_content?: string } }[] };
-        const msg = data.choices?.[0]?.message;
-        reply = (msg?.content || msg?.reasoning_content || '').trim();
+        const data = JSON.parse(text) as {
+          choices?: { message?: { content?: string | { type?: string; text?: string }[] } }[];
+        };
+        const content = data.choices?.[0]?.message?.content;
+        // 和评分时一样：content 可能是字符串，也可能是分段数组；不拿 reasoning 顶替正文
+        if (typeof content === 'string') reply = content.trim();
+        else if (Array.isArray(content)) {
+          reply = content
+            .map((part) => (typeof part === 'string' ? part : (part?.type === 'text' ? part.text ?? '' : '')))
+            .join('')
+            .trim();
+        }
       } catch {
         return fail(`返回的不是 JSON：${text.slice(0, 120)}`);
       }

@@ -50,7 +50,7 @@ function fieldsFor(p: AdminModelProfile | null): DialogField[] {
       name: 'ocrReasoningEffort',
       label: '转录阶段思考强度',
       type: 'select',
-      value: p?.params.ocrReasoningEffort || 'none',
+      value: p?.params.ocrReasoningEffort ?? '',
       options: EFFORT_OPTIONS,
       hint: '转录只是照着图抄字，none 最快，也不会把输出额度耗在推理上',
     },
