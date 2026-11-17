@@ -7,7 +7,7 @@ import type { AdapterConfig } from '../../shared/adapter-config';
 import type { FlagsResult, GradingInfo, TaskInfo } from '../../shared/protocol';
 import { BgError, bg } from '../../shared/protocol';
 import { signal } from '@preact/signals';
-import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from '../adapter';
+import { AdapterError, confirmUnchanged, fingerprint, fingerprintParts, isTransientFingerprint, readPaperInfo, readScore, rejectText, setScore, submit, typeScore, verifyScore, waitForNext, waitRejectChange } from '../adapter';
 import { captureAnswer } from '../capture';
 import {
   autoAttempted, autoConfirmPending, autoPaused, clearNotice, committing, effectiveMinConfidence, extVersion, flags, judgeCandidate, outdated, lastFingerprint, lastImage, mode, notice,
@@ -227,9 +227,57 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
       }
     }
     if (cancel?.aborted) return false;
+    // 写之前记下当前这一份答卷的指纹：平台可能把写分当成「保存并切下一题」，
+    // 那样页面已经翻页，读回校验会读到下一题的空白输入框
+    const pageBefore = fingerprintParts(cfg);
+    /**
+     * 页面是不是真的换到下一份了：只认「稳定且不是过渡状态」的变化。
+     * 图片还在加载（#loading）、图片被临时清空、画布重绘都可能是错觉，不能当成已提交。
+     */
+    const pageMoved = async (timeoutMs = 800) => {
+      if (pageBefore.length === 0) return false;
+      const before = pageBefore.join('|');
+      const deadline = Date.now() + timeoutMs;
+      let candidate = '';
+      let since = 0;
+      while (Date.now() < deadline) {
+        const now = fingerprintParts(cfg);
+        const joined = now.join('|');
+        const transient = now.length === 0 || now.some((p) => !p || p.includes('#loading'));
+        if (transient || joined === before) {
+          candidate = '';
+          since = 0;
+        } else if (joined !== candidate) {
+          candidate = joined;
+          since = Date.now();
+        } else if (Date.now() - since >= 250) {
+          return true; // 连续 250ms 都是同一张新图，才算翻页
+        }
+        await new Promise<void>((res) => setTimeout(res, 100));
+      }
+      return false;
+    };
+
     setScore(cfg, score, r.maxScore);
     await new Promise<void>((res) => setTimeout(res, 120));
-    if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
+    if (cancel?.aborted) return false;
+    if (!(await verifyScore(cfg, score))) {
+      if (await pageMoved()) {
+        console.warn('[EasyGrader] 写分后页面已翻页，按平台自动提交处理', { want: fmt(score) });
+      } else {
+        // 平台的受控输入框可能把我们写的值改掉/格式化，先换成更接近真实键盘的写法再试一次
+        const read = readScore(cfg);
+        console.warn('[EasyGrader] 写分后读回不一致，改用键盘输入重试', { want: fmt(score), read });
+        await typeScore(cfg, score);
+        if (!(await verifyScore(cfg, score, 1500)) && !(await pageMoved())) {
+          throw new AdapterError(
+            `分数写入后读回不一致：写入 ${fmt(score)}，平台的输入框里是「${readScore(cfg) ?? '空'}」。` +
+              '可能是平台按自己的步长/上限改了分数，或者拒绝了这次输入，请手动确认',
+          );
+        }
+      }
+    }
+    if (cancel?.aborted) return false;
 
     // confirm: await and surface recoverable failure (platform score already written)
     try {
@@ -259,8 +307,17 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
       state.value = { view: 'ready', task };
       return true;
     }
+    const moved = await pageMoved(400);
+    if (cancel?.aborted) return false;
+    if (moved) {
+      // 写分时平台已经自己提交并翻页了，不要再点一次提交按钮（会提交到下一份答卷上）
+      sessionCount.value += 1;
+      setNotice('ok', `已写入 ${fmt(score)} 分，平台已自动跳到下一份`);
+      state.value = { view: 'ready', task };
+      return true;
+    }
     state.value = { view: 'waiting', task, auto: false };
-    const before = fingerprintParts(cfg);
+    const before = pageBefore.length ? pageBefore : fingerprintParts(cfg);
     const rejectBefore = rejectText();
     await submit(cfg);
     const rejected = await waitRejectChange(rejectBefore);
@@ -270,7 +327,12 @@ async function commitScoreInner(score: number, andNext: boolean, autoSubmitted: 
       if (cancel?.aborted) return false;
       await typeScore(cfg, score);
       await new Promise<void>((res) => setTimeout(res, 150));
-      if (!verifyScore(cfg, score)) throw new AdapterError('分数写入后读回不一致，平台可能拒绝了输入，请手动给分');
+      if (!(await verifyScore(cfg, score, 1500))) {
+        throw new AdapterError(
+          `分数写入后读回不一致：写入 ${fmt(score)}，平台的输入框里是「${readScore(cfg) ?? '空'}」。` +
+            '可能是平台按自己的步长/上限改了分数，或者拒绝了这次输入，请手动确认',
+        );
+      }
       if (cancel?.aborted) return false;
       await submit(cfg);
     }

@@ -11,6 +11,7 @@ import {
   ListChecks,
   LogOut,
   Mail,
+  Cpu,
   ScrollText,
   SlidersHorizontal,
   ToggleLeft,
@@ -47,6 +48,7 @@ const ADMIN: NavItem[] = [
   { to: '/admin/presets', label: '适配预设', icon: SlidersHorizontal },
   { to: '/admin/ledger', label: '额度流水', icon: ScrollText },
   { to: '/admin/flags', label: '功能开关', icon: ToggleLeft },
+  { to: '/admin/model', label: '模型', icon: Cpu },
 ];
 
 export function RequireAuth() {

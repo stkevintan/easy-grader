@@ -1,5 +1,6 @@
-import { Inject, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { APP_CONFIG, AppConfig, ModelConfig } from '../config';
+import { ModelProfilesService } from './model-profiles.service';
 import type { GradingTask } from '../entities';
 import { TraceInput, TraceResponse, TraceService } from '../trace/trace.service';
 import type { GoldExample } from './gold.service';
@@ -264,18 +265,21 @@ export function buildPrompt(task: GradingTask, examples: GoldExample[] = [], tra
 
 /** OpenAI 兼容的 Chat Completions 视觉模型；未配置 API Key 时退化为 mock */
 @Injectable()
-export class ModelService {
+export class ModelService implements OnModuleInit {
   private readonly log = new Logger('Model');
 
   constructor(
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly trace: TraceService,
-  ) {
+    private readonly profiles: ModelProfilesService,
+  ) {}
+
+  onModuleInit() {
     if (!this.isConfigured) this.log.warn('未配置 MODEL_API_KEY，评分使用 mock（随机分数，仅用于联调）');
   }
 
   get isConfigured(): boolean {
-    return this.isUsable(this.cfg.model);
+    return this.isUsable(this.profiles.config('default'));
   }
 
   private isUsable(m: ModelConfig): boolean {
@@ -284,8 +288,7 @@ export class ModelService {
 
   /** 模型方案：default 是 MODEL_* 环境变量，其余在 MODEL_PROFILES 里覆盖部分字段；未知方案退回 default */
   modelFor(profile = 'default'): ModelConfig {
-    const p = profile !== 'default' && Object.hasOwn(this.cfg.modelProfiles, profile) ? this.cfg.modelProfiles[profile] : undefined;
-    return p ? { ...this.cfg.model, ...p } : this.cfg.model;
+    return this.profiles.config(profile);
   }
 
   async grade(
@@ -299,12 +302,14 @@ export class ModelService {
     const m = this.modelFor(profile);
     if (!this.isUsable(m)) {
       // mock 只给没配置模型的开发环境用；生产上选中了不完整的方案要明确失败（退还次数），不能悄悄出假分
-      if (profile !== 'default' && m !== this.cfg.model) throw new ServiceUnavailableException(`模型方案 ${profile} 缺少 baseUrl / apiKey / name，请联系管理员`);
+      if (profile !== 'default' && m !== this.profiles.config('default')) throw new ServiceUnavailableException(`模型方案 ${profile} 缺少 baseUrl / apiKey / name，请联系管理员`);
       return this.mock(task, sha256);
     }
 
     const started = Date.now();
     const goldExamples = examples.map((e) => ({ recordId: e.recordId, score: e.score }));
+    // 评分过程中管理员可能改方案；trace 记的是这次真正使用的配置
+    const modelSnapshot = { name: m.name, temperature: m.temperature, maxTokens: m.maxTokens, reasoningEffort: m.reasoningEffort || '' };
     let prompt = '';
     let attempts = 0;
     let ocr: TraceInput['ocr'] | undefined;
@@ -319,7 +324,7 @@ export class ModelService {
         try {
           const r = await this.withRetry('识别答卷', () => {
             attempts += 1;
-            return this.requestCompletion(m, imageDataUrl, ocrPrompt);
+            return this.requestCompletion(m, imageDataUrl, ocrPrompt, m.ocrReasoningEffort);
           });
           transcript = r.text.trim().slice(0, 4000);
           ocr = {
@@ -357,6 +362,7 @@ export class ModelService {
             prompt: '',
             promptVersion: PROMPT_VERSION,
         modelProfile: profile,
+            modelSnapshot,
             goldExamples,
             attempts,
             latencyMs: Date.now() - started,
@@ -418,6 +424,7 @@ export class ModelService {
         prompt,
         promptVersion: PROMPT_VERSION,
         modelProfile: profile,
+            modelSnapshot,
         goldExamples,
         attempts,
         latencyMs: Date.now() - started,
@@ -451,6 +458,7 @@ export class ModelService {
         prompt,
         promptVersion: PROMPT_VERSION,
         modelProfile: profile,
+            modelSnapshot,
         goldExamples,
         attempts,
         latencyMs: Date.now() - started,
@@ -498,8 +506,11 @@ export class ModelService {
     m: ModelConfig,
     imageDataUrl: string | undefined,
     prompt: string,
+    /** 覆盖这一阶段的思考强度；不传用模型方案里的值（转录阶段用它单独降强度） */
+    reasoningOverride?: ModelConfig['reasoningEffort'],
   ): Promise<{ text: string; response: TraceResponse }> {
-    const { baseUrl, apiKey, name, timeoutMs, temperature, maxTokens, reasoningEffort } = m;
+    const { baseUrl, apiKey, name, timeoutMs, temperature, maxTokens } = m;
+    const reasoningEffort = reasoningOverride ?? m.reasoningEffort;
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/chat/completions`, {

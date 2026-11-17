@@ -220,6 +220,37 @@ export class FeatureFlagAudit {
   @CreateDateColumn() createdAt!: Date;
 }
 
+/**
+ * 一个模型方案：default 是默认模型，其余名字对应功能开关 model_profile 的取值。
+ * 模型名、地址、密钥和参数都可以在控制台改；没填的字段沿用 MODEL_* 环境变量。
+ * 只有通过视觉探测（能真的读图）的方案才能保存并生效。
+ */
+@Entity('model_profiles')
+export class ModelProfile {
+  @PrimaryGeneratedColumn() id!: number;
+  @Index({ unique: true }) @Column({ type: 'varchar', length: 64 }) name!: string;
+  @Column({ type: 'varchar', default: '' }) model!: string;
+  @Column({ type: 'varchar', default: '' }) baseUrl!: string;
+  /** null 表示沿用环境变量里的 MODEL_API_KEY */
+  @Column({ type: 'varchar', nullable: true }) apiKey!: string | null;
+  @Column({ type: 'real', nullable: true }) temperature!: number | null;
+  @Column({ type: 'integer', nullable: true }) maxTokens!: number | null;
+  /** '' 表示不传该参数 */
+  @Column({ type: 'varchar', nullable: true }) reasoningEffort!: string | null;
+  /** 转录阶段的思考强度；null 表示跟 reasoningEffort 一样，'' 表示不传 */
+  @Column({ type: 'varchar', nullable: true }) ocrReasoningEffort!: string | null;
+  @Column({ type: 'integer', nullable: true }) sampleCount!: number | null;
+  @Column({ type: 'boolean', nullable: true }) scoreWithImage!: boolean | null;
+  @Column({ type: 'integer', nullable: true }) timeoutMs!: number | null;
+  /** 最近一次视觉探测的结果；保存前必须为 true */
+  @Column({ type: 'boolean', default: false }) visionOk!: boolean;
+  @Column({ type: 'datetime', nullable: true }) visionCheckedAt!: Date | null;
+  @Column({ type: 'text', default: '' }) visionError!: string;
+  @UpdateDateColumn() updatedAt!: Date;
+  @Column({ type: 'integer', nullable: true }) updatedBy!: number | null;
+  @Column({ type: 'varchar', default: '' }) updatedByName!: string;
+}
+
 export const ENTITIES = [
   User,
   CreditLedger,
@@ -232,4 +263,5 @@ export const ENTITIES = [
   Org,
   FeatureFlagOverride,
   FeatureFlagAudit,
+  ModelProfile,
 ];

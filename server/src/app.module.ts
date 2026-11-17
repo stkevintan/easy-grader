@@ -22,6 +22,8 @@ import { JudgeController } from './judge/judge.controller';
 import { JudgeService } from './judge/judge.service';
 import { GoldService } from './judge/gold.service';
 import { ModelService } from './judge/model.service';
+import { ModelProfilesService } from './judge/model-profiles.service';
+import { VisionService } from './judge/vision.service';
 import { TaskInfoService } from './judge/task-info.service';
 import { TraceService } from './trace/trace.service';
 import { InviteService } from './invite.service';
@@ -68,6 +70,8 @@ export class AppModule {
         BillingService,
         AuthService,
         HandoffService,
+        VisionService,
+        ModelProfilesService,
         ModelService,
         JudgeService,
         GoldService,

@@ -22,6 +22,8 @@ export interface AppConfig {
     maxTokens: number;
     /** 推理模型的思考强度；空字符串表示不传，由服务商默认 */
     reasoningEffort: '' | 'none' | 'minimal' | 'low' | 'medium' | 'high';
+    /** 转录阶段的思考强度；未单独设置时为 undefined，由当前方案的 reasoningEffort 继承 */
+    ocrReasoningEffort?: '' | 'none' | 'minimal' | 'low' | 'medium' | 'high';
     /** 上游 5xx / 429 / 网络错误 / 超时时的重试次数（不含首次请求） */
     maxRetries: number;
     /** 首次重试的等待毫秒数，之后每次翻倍 */
@@ -74,6 +76,7 @@ const PROFILE_KEYS: Record<string, 'string' | 'number' | 'boolean'> = {
   temperature: 'number',
   maxTokens: 'number',
   reasoningEffort: 'string',
+  ocrReasoningEffort: 'string',
   scoreWithImage: 'boolean',
   sampleCount: 'number',
 };
@@ -97,12 +100,22 @@ export function parseModelProfiles(raw: string | undefined): Record<string, Part
       const want = Object.hasOwn(PROFILE_KEYS, k) ? PROFILE_KEYS[k] : undefined;
       if (!want) throw new Error(`MODEL_PROFILES.${name} 不支持字段 ${k}`);
       if (typeof x !== want || (want === 'number' && !Number.isFinite(x))) throw new Error(`MODEL_PROFILES.${name}.${k} 应为 ${want}`);
+      if (k === 'reasoningEffort' || k === 'ocrReasoningEffort') {
+        const ok = ['', 'none', 'minimal', 'low', 'medium', 'high', 'off', 'default', 'disabled'].includes(x as string);
+        if (!ok) throw new Error(`MODEL_PROFILES.${name}.${k} 只能是 none/minimal/low/medium/high/off`);
+      }
       if (want === 'string' && ['baseUrl', 'apiKey', 'name'].includes(k) && !(x as string).trim()) throw new Error(`MODEL_PROFILES.${name}.${k} 不能为空`);
       // 上限 60 秒：两阶段 + 重试的总时间要留在扩展评分请求的 240 秒期限内
       if (k === 'timeoutMs' && !(Number.isInteger(x) && (x as number) >= 1000 && (x as number) <= 60_000)) throw new Error(`MODEL_PROFILES.${name}.timeoutMs 应为 1000–60000 的整数`);
       if (k === 'temperature' && !((x as number) >= 0 && (x as number) <= 2)) throw new Error(`MODEL_PROFILES.${name}.temperature 应在 0–2 之间`);
       if ((k === 'maxTokens' || k === 'sampleCount') && !(Number.isInteger(x) && (x as number) >= 1)) throw new Error(`MODEL_PROFILES.${name}.${k} 应为正整数`);
-      p[k] = k === 'baseUrl' && typeof x === 'string' ? x.replace(/\/+$/, '') : k === 'reasoningEffort' ? resolveReasoningEffort(String(x)) : x;
+      const normalizeEffort = (v: string) => (v.trim() === '' ? '' : resolveReasoningEffort(v));
+      p[k] =
+        k === 'baseUrl' && typeof x === 'string'
+          ? x.replace(/\/+$/, '')
+          : k === 'reasoningEffort' || k === 'ocrReasoningEffort'
+            ? normalizeEffort(String(x))
+            : x;
     }
     if (typeof p.sampleCount === 'number') p.sampleCount = Math.min(5, p.sampleCount);
     if (typeof p.maxTokens === 'number') p.maxTokens = Math.max(256, p.maxTokens);
@@ -166,6 +179,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       // 默认 low：明显更快，实测评分结论不变。
       // 设为 none / off / disabled 可完全不传 reasoning_effort（模型不认识该参数时用）。
       reasoningEffort: resolveReasoningEffort(env.MODEL_REASONING_EFFORT),
+      // 转录只是照着图抄字，思考纯属浪费；默认跟打分一致，需要时用 MODEL_OCR_REASONING_EFFORT 单独调
+      ...(env.MODEL_OCR_REASONING_EFFORT ? { ocrReasoningEffort: resolveReasoningEffort(env.MODEL_OCR_REASONING_EFFORT) } : {}),
       maxRetries: Math.min(5, Math.max(0, Math.floor(num(env.MODEL_MAX_RETRIES, 2)))),
       retryDelayMs: Math.max(0, num(env.MODEL_RETRY_DELAY_MS, 800)),
       scoreWithImage: bool(env.SCORE_WITH_IMAGE, true),

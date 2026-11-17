@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config';
 import { configureApp, isAllowedOrigin } from '../src/main';
 import { AuthService } from '../src/auth/auth.service';
 import { buildOcrPrompt, buildPrompt, extractJson, isBlankOcr, ModelOutputError, ModelService, parseVerdict, snapScore } from '../src/judge/model.service';
+import { VisionService } from '../src/judge/vision.service';
 import { pickGoldExamples } from '../src/judge/gold.service';
 import { hostMatches, normalizeHostPattern } from '../src/adapters/adapter-config';
 import { parseModelProfiles } from '../src/config';
@@ -23,6 +24,8 @@ function fakePng(seed: string): string {
 }
 
 const ADMIN = { username: 'admin', password: 'admin-password-1' };
+/** 视觉探测时实际拿到的模型配置（用于断言探测和评分配置一致） */
+const visionProbes: { name: string; ocr?: string }[] = [];
 
 describe('Easy Grader server (e2e)', () => {
   let app: INestApplication;
@@ -43,7 +46,18 @@ describe('Easy Grader server (e2e)', () => {
     } as NodeJS.ProcessEnv);
     process.env.RATE_LIMIT_AUTH = '10000';
     process.env.RATE_LIMIT_JUDGE = '10000';
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 };
+        },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
@@ -55,6 +69,13 @@ describe('Easy Grader server (e2e)', () => {
   });
 
   const auth = (t: string) => ({ authorization: `Bearer ${t}` });
+
+  it('OCR 思考强度：不设就留给方案继承，设了就用它', () => {
+    expect(loadConfig({}).model.ocrReasoningEffort).toBeUndefined();
+    expect(loadConfig({ MODEL_OCR_REASONING_EFFORT: 'none' }).model.ocrReasoningEffort).toBe('none');
+    // off 表示不传该参数
+    expect(loadConfig({ MODEL_OCR_REASONING_EFFORT: 'off' }).model.ocrReasoningEffort).toBe('');
+  });
 
   it('health 不需要登录', async () => {
     const r = await http.get('/api/health').expect(200);
@@ -103,6 +124,105 @@ describe('Easy Grader server (e2e)', () => {
 
   it('普通用户不能访问管理接口', async () => {
     await http.get('/api/admin/users').set(auth(userToken)).expect(403);
+  });
+
+  it('管理端能看到当前模型方案，但不返回密钥内容', async () => {
+    const r = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    const def = r.body.profiles.find((p: { name: string }) => p.name === 'default');
+    // 测试环境没配 MODEL_API_KEY：应当明确报出来，而不是假装可用
+    expect(def).toMatchObject({ apiKeyConfigured: false, ready: false });
+    expect(def.params).toMatchObject({ sampleCount: 1, scoreWithImage: true });
+    expect(Array.isArray(r.body.usage)).toBe(true);
+    expect(JSON.stringify(r.body)).not.toMatch(/apiKey"?\s*:\s*"/);
+    await http.get('/api/admin/model').set(auth(userToken)).expect(403);
+  });
+
+  it('模型方案保存前必须通过视觉探测，通过后立刻生效', async () => {
+    // 读不了图的模型直接拒绝
+    await http
+      .put('/api/admin/model/bad')
+      .set(auth(adminToken))
+      .send({ model: 'no-vision', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key' })
+      .expect(400);
+
+    // 能读图的方案可以保存，并出现在列表里
+    await http
+      .put('/api/admin/model/default')
+      .set(auth(adminToken))
+      .send({ model: 'ui-model', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key' })
+      .expect(200);
+    let h = await http.get('/api/health').expect(200);
+    expect(h.body.model).toBe('ui-model');
+
+    const saved = await http
+      .put('/api/admin/model/fast')
+      .set(auth(adminToken))
+      .send({ model: 'ui-model-fast', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key', sampleCount: 3, ocrReasoningEffort: 'none' })
+      .expect(200);
+    expect(saved.body.profiles.map((p: { name: string }) => p.name)).toEqual(expect.arrayContaining(['default', 'fast']));
+    const fast = saved.body.profiles.find((p: { name: string }) => p.name === 'fast');
+    expect(fast).toMatchObject({ model: 'ui-model-fast', vision: { ok: true } });
+    expect(fast.params.sampleCount).toBe(3);
+    expect(fast.params.ocrReasoningEffort).toBe('none');
+
+    // 只改一个字段，其余保留
+    await http.put('/api/admin/model/default').set(auth(adminToken)).send({ model: 'ui-model-2' }).expect(200);
+    h = await http.get('/api/health').expect(200);
+    expect(h.body.model).toBe('ui-model-2');
+
+    // 地址不合法直接拒绝
+    await http.put('/api/admin/model/default').set(auth(adminToken)).send({ baseUrl: 'not a url' }).expect(400);
+    // null 不是「不改」：显式传 null 要被拒，而不是 500
+    for (const field of ['model', 'baseUrl', 'apiKey']) {
+      await http.put('/api/admin/model/default').set(auth(adminToken)).send({ [field]: null }).expect(400);
+    }
+
+    // 尾部斜杠应被规范化（否则评分时拼出 //chat/completions）
+    const slash = await http
+      .put('/api/admin/model/fast')
+      .set(auth(adminToken))
+      .send({ model: 'ui-model-fast', baseUrl: 'https://example.com/v1/', apiKey: 'sk-test-key', reasoningEffort: 'none' })
+      .expect(200);
+    const slashFast = slash.body.profiles.find((p: { name: string }) => p.name === 'fast');
+    expect(slashFast.baseUrl).toBe('https://example.com/v1');
+    // 没有单独设转录强度时，继承这个方案实际的打分强度（探测时也必须是 none，不能还是旧的继承值）
+    expect(slashFast.params.ocrReasoningEffort).toBe('none');
+    expect(visionProbes.at(-1)).toMatchObject({ name: 'ui-model-fast', ocr: 'none' });
+    // 恢复一个非默认方案：model/baseUrl 是非空列，不能因为写 null 而 500
+    const resetFast = await http.post('/api/admin/model/fast/reset').set(auth(adminToken)).expect(201);
+    expect(resetFast.body.profiles.find((p: { name: string }) => p.name === 'fast')).toMatchObject({
+      model: '',
+      overrides: [],
+      // 视觉结果属于旧模型，恢复后必须重新探测
+      vision: { ok: false, checkedAt: null, error: '' },
+    });
+
+    await http.delete('/api/admin/model/fast').set(auth(adminToken)).expect(200);
+    // 探测失败的保存不能改掉线上正在用的配置（缓存里不能先被清空）
+    await http
+      .put('/api/admin/model/default')
+      .set(auth(adminToken))
+      .send({ model: 'no-vision', apiKey: '' })
+      .expect(400);
+    const afterFail = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    const defAfterFail = afterFail.body.profiles.find((p: { name: string }) => p.name === 'default');
+    expect(defAfterFail).toMatchObject({ model: 'ui-model-2', apiKeyConfigured: true });
+
+    await http.post('/api/admin/model/default/reset').set(auth(adminToken)).expect(201);
+    h = await http.get('/api/health').expect(200);
+    expect(h.body.model).toBe('mock');
+  });
+
+  it('只在环境变量里的方案也能测试读图，结果会落库', async () => {
+    // 复位之后 default 没有数据库行，测试不应该 404
+    const r = await http.post('/api/admin/model/default/test').set(auth(adminToken)).expect(201);
+    expect(r.body).toMatchObject({ name: 'default', vision: { ok: true, error: '' } });
+    const list = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    expect(list.body.profiles.find((p: { name: string }) => p.name === 'default').vision.ok).toBe(true);
+    // 只落了视觉结果，模型配置仍沿用环境变量（测试环境没有 key，所以还是 mock）
+    const health = await http.get('/api/health').expect(200);
+    expect(health.body.model).toBe('mock');
+    await http.post('/api/admin/model/default/reset').set(auth(adminToken)).expect(201);
   });
 
   it('演示页适配预设已写入并可按 host+path 解析', async () => {
@@ -338,6 +458,9 @@ describe('Easy Grader server (e2e)', () => {
     const mine = presets.body.find((p: any) => p.name === 'mine');
     const pub = await http.patch(`/api/admin/presets/${mine.id}`).set(auth(adminToken)).send({ scope: 'public' }).expect(200);
     expect(pub.body).toMatchObject({ scope: 'public', ownerId: null });
+    // 改名的字段名是 name：控制台每次编辑都会带上它，不能被当成多余字段拒掉
+    await http.patch(`/api/admin/presets/${mine.id}`).set(auth(adminToken)).send({ name: 'mine2' }).expect(200);
+    await http.patch(`/api/admin/presets/${mine.id}`).set(auth(adminToken)).send({ name: 'mine' }).expect(200);
     // 公开后其他用户也能解析到
     const other = await http.post('/api/auth/login').send({ username: '王老师', password: 'password-123' }).expect(200);
     const o = await http.get('/api/adapters/resolve').query({ host: 'xiaoxianai.cn', path: '/' }).set(auth(other.body.token)).expect(200);
@@ -542,7 +665,18 @@ describe('OpenAI 兼容模型接入', () => {
       SCORE_WITH_IMAGE: 'false',
       MODEL_PROFILES: JSON.stringify({ cheap: { name: 'qwen-vl-cheap', sampleCount: 1 } }),
     } as NodeJS.ProcessEnv);
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 };
+        },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
@@ -721,6 +855,22 @@ describe('OpenAI 兼容模型接入', () => {
     ocrReply = '作者思念外婆';
   });
 
+  it('环境变量里的模型方案：测试读图能落库，但控制台删不掉', async () => {
+    const http = request(app.getHttpServer());
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    const ah = { authorization: `Bearer ${admin.body.token}` };
+
+    const tested = await http.post('/api/admin/model/cheap/test').set(ah).expect(201);
+    expect(tested.body).toMatchObject({ name: 'cheap', envBacked: true, vision: { ok: true } });
+
+    // 只在 MODEL_PROFILES 里定义的方案删不掉，只能改服务器 env
+    await http.delete('/api/admin/model/cheap').set(ah).expect(400);
+
+    const list = await http.get('/api/admin/model').set(ah).expect(200);
+    const cheap = list.body.profiles.find((p: { name: string }) => p.name === 'cheap');
+    expect(cheap).toMatchObject({ envBacked: true, vision: { ok: true } });
+  });
+
   it('功能开关 model_profile：按用户切换模型方案，评分记录记下方案名', async () => {
     const http = request(app.getHttpServer());
     const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
@@ -767,7 +917,18 @@ describe('功能开关', () => {
       DB_PATH: ':memory:', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: ADMIN.password, INITIAL_CREDITS: '5',
       RATE_LIMIT_DEFAULT: '10000', RATE_LIMIT_AUTH: '10000', RATE_LIMIT_JUDGE: '10000',
     } as NodeJS.ProcessEnv);
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 };
+        },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
@@ -883,7 +1044,18 @@ describe('限流', () => {
 
   it('登录接口超过 RATE_LIMIT_AUTH 返回 429，不影响 health', async () => {
     const cfg = loadConfig({ DB_PATH: ':memory:', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'admin-password-1', RATE_LIMIT_AUTH: '3' } as NodeJS.ProcessEnv);
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 };
+        },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
@@ -1052,6 +1224,14 @@ describe('纯函数', () => {
     expect(hostMatches('a.b.foo.com', 'foo.com')).toBe(true);
     expect(hostMatches('evilfoo.com', 'foo.com')).toBe(false);
     expect(hostMatches('localhost:3000', 'localhost')).toBe(true);
+  });
+
+  it('MODEL_PROFILES 支持 ocrReasoningEffort，非法值报错', () => {
+    const p = parseModelProfiles('{"fast":{"name":"qwen-vl-max","ocrReasoningEffort":"none"}}');
+    expect(p.fast).toMatchObject({ name: 'qwen-vl-max', ocrReasoningEffort: 'none' });
+    // off / default / disabled 表示不传该参数，解析时归一化成空字符串
+    expect(parseModelProfiles('{"fast":{"ocrReasoningEffort":"off"}}').fast.ocrReasoningEffort).toBe('');
+    expect(() => parseModelProfiles('{"fast":{"ocrReasoningEffort":"bogus"}}')).toThrow(/ocrReasoningEffort/);
   });
 
   it('MODEL_PROFILES 解析与校验', () => {

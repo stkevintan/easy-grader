@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { createHash } from 'node:crypto';
 import { In, Repository } from 'typeorm';
 import { APP_CONFIG, AppConfig } from '../config';
+import { ModelProfilesService } from '../judge/model-profiles.service';
 import {
   FeatureFlagAudit,
   FeatureFlagOverride,
@@ -53,10 +54,11 @@ export class FlagService {
     @InjectRepository(FeatureFlagAudit) private readonly audit: Repository<FeatureFlagAudit>,
     @InjectRepository(User) private readonly users: Repository<User>,
     @InjectRepository(Org) private readonly orgs: Repository<Org>,
+    private readonly profiles: ModelProfilesService,
   ) {}
 
   get validateContext(): FlagValidateContext {
-    return { modelProfiles: ['default', ...Object.keys(this.cfg.modelProfiles)] };
+    return { modelProfiles: this.profiles.names() };
   }
 
   private async rows(): Promise<FeatureFlagOverride[]> {

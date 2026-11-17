@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { APP_CONFIG, AppConfig } from '../config';
 import type { GradingTask } from '../entities';
+import { ModelProfilesService } from '../judge/model-profiles.service';
 
 export interface TraceResponse {
   model?: string;
@@ -55,6 +56,8 @@ export interface TraceInput {
   promptVersion?: number;
   /** 功能开关 model_profile 选中的模型方案 */
   modelProfile?: string;
+  /** 评分开始时的模型快照；评分过程中管理员改了方案，trace 里仍记当时真正用的配置 */
+  modelSnapshot?: { name: string; temperature: number; maxTokens: number; reasoningEffort: string };
   /** 提示词里引用的老师确认示例（只有 recordId 和分数，文字已在 prompt 里） */
   goldExamples?: { recordId: number; score: number }[];
   /** 两阶段评分的第一阶段：纯转录 */
@@ -87,7 +90,10 @@ const IMAGE_EXT: Record<string, string> = {
 export class TraceService {
   private readonly log = new Logger('Trace');
 
-  constructor(@Inject(APP_CONFIG) private readonly cfg: AppConfig) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    private readonly profiles: ModelProfilesService,
+  ) {}
 
   get enabled(): boolean {
     return this.cfg.saveTraces;
@@ -104,7 +110,9 @@ export class TraceService {
       await writeFile(join(this.cfg.traceDir, imageFile), Buffer.from(input.imageDataUrl.slice(input.imageDataUrl.indexOf(',') + 1), 'base64'));
 
       const profile = input.modelProfile ?? 'default';
-      const model = { ...this.cfg.model, ...(profile !== 'default' && Object.hasOwn(this.cfg.modelProfiles, profile) ? this.cfg.modelProfiles[profile] : {}) };
+      const fromProfile = this.profiles.config(profile);
+      // 评分开始时抓的快照优先：评分过程中管理员改了方案，trace 仍要记当时真正用的配置
+      const model = input.modelSnapshot ? { ...fromProfile, ...input.modelSnapshot } : fromProfile;
       const trace = {
         version: 2,
         promptVersion: input.promptVersion ?? null,

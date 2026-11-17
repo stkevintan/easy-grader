@@ -159,22 +159,53 @@ function inputTarget(cfg: AdapterConfig): HTMLInputElement | HTMLTextAreaElement
   return el;
 }
 
-export function setScore(cfg: AdapterConfig, score: number, maxScore: number) {
+/**
+ * 写分。默认写完不 blur、不按 Enter：有些平台把这两件事当成「保存并切换下一题」，
+ * 写完立刻翻页，后面读回校验读到的是下一题的空白框，误判成平台拒绝了输入。
+ */
+export function setScore(cfg: AdapterConfig, score: number, maxScore: number, opts: { blur?: boolean } = {}) {
   if (cfg.scoreMode === 'buttons') {
     const btn = findScoreButton(cfg, score, maxScore);
     if (!btn) throw new AdapterError(`打分板上找不到「${fmt(score)}」分的按钮，请手动给分`);
     clickElement(btn, cfg.scoreButtons.clickType);
     return;
   }
-  setInputValue(inputTarget(cfg), fmt(score));
+  setInputValue(inputTarget(cfg), fmt(score), { blur: opts.blur ?? false, enter: false });
 }
 
-/** 写完分后读回来校验，避免平台把输入改掉/拒绝了我们却继续提交 */
-export function verifyScore(cfg: AdapterConfig, score: number): boolean {
-  if (cfg.scoreMode === 'buttons') return true;
+/** 当前输入框里读到的分数文本；读不到返回 null */
+export function readScore(cfg: AdapterConfig): string | null {
   const inputs = queryAll(cfg.scoreInput.selectors).filter(isVisible);
-  if (inputs.length !== 1) return false;
-  return Number((inputs[0] as HTMLInputElement).value) === Number(fmt(score));
+  if (inputs.length !== 1) return null;
+  return String((inputs[0] as HTMLInputElement).value ?? '');
+}
+
+/** 把平台输入框里的文本解析成分数：允许「3.5 分」「3.50」这种写法 */
+function parseScore(text: string): number {
+  const m = text.replace(/[，,]/g, '').match(/-?\d+(?:\.\d+)?/);
+  return m ? Number(m[0]) : Number.NaN;
+}
+
+/**
+ * 写完分后读回来校验，避免平台把输入改掉/拒绝了我们却继续提交。
+ * 平台可能在自己的一套状态更新后重写输入框（受控组件、格式化、异步校验），
+ * 所以这里轮询一段时间，期间只要读到期望的分数就算成功，而不是只读一次。
+ */
+export async function verifyScore(cfg: AdapterConfig, score: number, timeoutMs = 1200): Promise<boolean> {
+  if (cfg.scoreMode === 'buttons') return true;
+  const want = Number(fmt(score));
+  const deadline = Date.now() + timeoutMs;
+  // 读到一次不算数：平台可能稍后再改写输入框，值要稳定一小段时间才算写入成功
+  let matchedAt = 0;
+  for (;;) {
+    const text = readScore(cfg);
+    const ok = text !== null && parseScore(text) === want;
+    if (ok && !matchedAt) matchedAt = Date.now();
+    if (!ok) matchedAt = 0;
+    if (matchedAt && Date.now() - matchedAt >= 150) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(60);
+  }
 }
 
 /**

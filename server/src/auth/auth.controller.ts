@@ -8,6 +8,7 @@ import { APP_CONFIG, AppConfig } from '../config';
 import { CreditLedger } from '../entities';
 import { ChangePasswordDto, HandoffRedeemDto, LoginDto, RedeemDto, RegisterDto } from './auth.dto';
 import { AuthService } from './auth.service';
+import { ModelProfilesService } from '../judge/model-profiles.service';
 
 // 版本号取自 package.json，避免发版时忘了同步这里的硬编码
 const APP_VERSION = (require('../../package.json') as { version?: string }).version ?? '0.0.0';
@@ -19,18 +20,20 @@ export class AuthController {
     private readonly auth: AuthService,
     private readonly billing: BillingService,
     @InjectRepository(CreditLedger) private readonly ledger: Repository<CreditLedger>,
+    private readonly modelProfiles: ModelProfilesService,
   ) {}
 
   /** 扩展和后台用来探测服务是否可用、是否允许注册 */
   @Public()
   @Get('health')
   health() {
+    const model = this.modelProfiles.config('default');
     return {
       ok: true,
       name: 'easy-grader',
       version: APP_VERSION,
       allowRegister: this.cfg.allowRegister,
-      model: this.cfg.model.apiKey ? this.cfg.model.name : 'mock',
+      model: model.apiKey ? model.name : 'mock',
     };
   }
 

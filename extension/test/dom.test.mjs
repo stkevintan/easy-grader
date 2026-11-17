@@ -113,12 +113,12 @@ test('readPaperInfo：选择器、正则、固定值', () => {
   assert.deepEqual({ ...t.adapter.readPaperInfo(cfg) }, { examTitle: '手填考试', questionNo: '17', maxScore: 6 });
 });
 
-test('setScore 输入框：写入并通过 verifyScore；多个/零个输入框时报错', () => {
+test('setScore 输入框：写入并通过 verifyScore；多个/零个输入框时报错', async () => {
   const { doc, t } = page(`<input id="score" />`);
   t.adapter.setScore(baseCfg(), 4.5, 6);
   assert.equal(doc.getElementById('score').value, '4.5');
-  assert.equal(t.adapter.verifyScore(baseCfg(), 4.5), true);
-  assert.equal(t.adapter.verifyScore(baseCfg(), 4), false);
+  assert.equal(await t.adapter.verifyScore(baseCfg(), 4.5), true);
+  assert.equal(await t.adapter.verifyScore(baseCfg(), 4, 200), false);
 
   const two = page(`<input class="s" /><input class="s" />`);
   assert.throws(() => two.t.adapter.setScore(baseCfg({ scoreInput: { selectors: ['.s'] } }), 1, 6), /多个分数输入框/);
@@ -128,19 +128,19 @@ test('setScore 输入框：写入并通过 verifyScore；多个/零个输入框�
   assert.throws(() => ro.t.adapter.setScore(baseCfg(), 1, 6), /不可编辑/);
 });
 
-test('setScore / verifyScore 用同一个可见输入框，不会读到隐藏框', () => {
+test('setScore / verifyScore 用同一个可见输入框，不会读到隐藏框', async () => {
   const { doc, t } = page(`<input type="text" style="display:none" /><input id="score" type="text" />`);
   const cfg = baseCfg({ scoreInput: { selectors: ['input[type="text"]'] } });
   t.adapter.setScore(cfg, 3, 6);
   assert.equal(doc.getElementById('score').value, '3');
-  assert.equal(t.adapter.verifyScore(cfg, 3), true);
+  assert.equal(await t.adapter.verifyScore(cfg, 3), true);
 });
 
 test('typeScore：execCommand 不可用时用逐字符事件写入', async () => {
   const { doc, t } = page(`<input id="score" />`);
   await t.adapter.typeScore(baseCfg(), 4.5);
   assert.equal(doc.getElementById('score').value, '4.5');
-  assert.equal(t.adapter.verifyScore(baseCfg(), 4.5), true);
+  assert.equal(await t.adapter.verifyScore(baseCfg(), 4.5), true);
 });
 
 test('rejectText / waitRejectChange：识别平台「分数不能为空」提示', async () => {
@@ -149,6 +149,45 @@ test('rejectText / waitRejectChange：识别平台「分数不能为空」提示
   const waiting = t.adapter.waitRejectChange(null, 800);
   setTimeout(() => (doc.getElementById('err').textContent = '分数不能为空'), 100);
   assert.equal(await waiting, '分数不能为空');
+});
+
+test('setScore 不再 blur / 按 Enter：有平台把这两个动作当成「保存并切下一题」', () => {
+  const { doc, t } = page(`<input id="score" />`);
+  const el = doc.getElementById('score');
+  const seen = [];
+  el.addEventListener('blur', () => seen.push('blur'));
+  el.addEventListener('keyup', (e) => seen.push('keyup:' + e.key));
+  t.adapter.setScore(baseCfg(), 4, 6);
+  assert.equal(el.value, '4');
+  assert.deepEqual(seen, [], '写分时不应触发 blur 或 Enter');
+  // 需要时仍可以显式要求 blur
+  t.adapter.setScore(baseCfg(), 5, 6, { blur: true });
+  assert.deepEqual(seen, ['blur']);
+});
+
+test('verifyScore 等平台自己的格式化：稍后才变成「4.50」也算写入成功', async () => {
+  const { doc, t } = page(`<input id="score" />`);
+  t.adapter.setScore(baseCfg(), 4.5, 6);
+  setTimeout(() => {
+    doc.getElementById('score').value = '4.50';
+  }, 300);
+  assert.equal(await t.adapter.verifyScore(baseCfg(), 4.5), true);
+});
+
+test('verifyScore 要稳定：刚读到又被平台改写，不算成功', async () => {
+  const { doc, t } = page(`<input id="score" />`);
+  t.adapter.setScore(baseCfg(), 4.5, 6);
+  setTimeout(() => {
+    doc.getElementById('score').value = '5';
+  }, 100);
+  assert.equal(await t.adapter.verifyScore(baseCfg(), 4.5, 600), false);
+});
+
+test('verifyScore 容忍单位：输入框里是「4.5 分」也认', async () => {
+  const { doc, t } = page(`<input id="score" />`);
+  doc.getElementById('score').value = '4.5 分';
+  assert.equal(await t.adapter.verifyScore(baseCfg(), 4.5, 200), true);
+  assert.equal(t.adapter.readScore(baseCfg()), '4.5 分');
 });
 
 test('setScore 打分板：按文字匹配“3”“3分”“满分”', () => {
