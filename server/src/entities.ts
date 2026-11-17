@@ -220,6 +220,27 @@ export class FeatureFlagAudit {
   @CreateDateColumn() createdAt!: Date;
 }
 
+/**
+ * 管理端在页面上改的模型覆盖值，只有一行（id=1）。
+ * 为 null 的字段沿用环境变量（MODEL_*）；这样既能在控制台改，又能随时「恢复为环境变量」。
+ */
+@Entity('model_settings')
+export class ModelSetting {
+  @PrimaryGeneratedColumn() id!: number;
+  @Column({ type: 'varchar', nullable: true }) name!: string | null;
+  @Column({ type: 'varchar', nullable: true }) baseUrl!: string | null;
+  @Column({ type: 'varchar', nullable: true }) apiKey!: string | null;
+  @Column({ type: 'real', nullable: true }) temperature!: number | null;
+  @Column({ type: 'integer', nullable: true }) maxTokens!: number | null;
+  @Column({ type: 'varchar', nullable: true }) reasoningEffort!: string | null;
+  @Column({ type: 'integer', nullable: true }) sampleCount!: number | null;
+  @Column({ type: 'boolean', nullable: true }) scoreWithImage!: boolean | null;
+  @Column({ type: 'integer', nullable: true }) timeoutMs!: number | null;
+  @UpdateDateColumn() updatedAt!: Date;
+  @Column({ type: 'integer', nullable: true }) updatedBy!: number | null;
+  @Column({ type: 'varchar', default: '' }) updatedByName!: string;
+}
+
 export const ENTITIES = [
   User,
   CreditLedger,
@@ -232,4 +253,5 @@ export const ENTITIES = [
   Org,
   FeatureFlagOverride,
   FeatureFlagAudit,
+  ModelSetting,
 ];

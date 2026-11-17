@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { APP_CONFIG, AppConfig } from '../config';
 import type { GradingTask } from '../entities';
+import { ModelSettingsService } from '../judge/model-settings.service';
 
 export interface TraceResponse {
   model?: string;
@@ -87,7 +88,10 @@ const IMAGE_EXT: Record<string, string> = {
 export class TraceService {
   private readonly log = new Logger('Trace');
 
-  constructor(@Inject(APP_CONFIG) private readonly cfg: AppConfig) {}
+  constructor(
+    @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    private readonly settings: ModelSettingsService,
+  ) {}
 
   get enabled(): boolean {
     return this.cfg.saveTraces;
@@ -104,7 +108,8 @@ export class TraceService {
       await writeFile(join(this.cfg.traceDir, imageFile), Buffer.from(input.imageDataUrl.slice(input.imageDataUrl.indexOf(',') + 1), 'base64'));
 
       const profile = input.modelProfile ?? 'default';
-      const model = { ...this.cfg.model, ...(profile !== 'default' && Object.hasOwn(this.cfg.modelProfiles, profile) ? this.cfg.modelProfiles[profile] : {}) };
+      const baseModel = this.settings.current();
+      const model = { ...baseModel, ...(profile !== 'default' && Object.hasOwn(this.cfg.modelProfiles, profile) ? this.cfg.modelProfiles[profile] : {}) };
       const trace = {
         version: 2,
         promptVersion: input.promptVersion ?? null,

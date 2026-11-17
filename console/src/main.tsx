@@ -13,6 +13,7 @@ import { RecordDetailPage, RecordsPage } from './pages/records';
 import { TasksPage } from './pages/tasks';
 import { AdminCodesPage, AdminInvitesPage } from './pages/admin/codes';
 import { AdminFlagsPage } from './pages/admin/flags';
+import { AdminModelPage } from './pages/admin/model';
 import { AdminHomePage } from './pages/admin/home';
 import { AdminPresetsPage } from './pages/admin/presets';
 import { AdminOrgsPage } from './pages/admin/orgs';
@@ -49,6 +50,7 @@ const router = createHashRouter([
               { path: '/admin/presets', element: <AdminPresetsPage /> },
               { path: '/admin/ledger', element: <AdminLedgerPage /> },
               { path: '/admin/flags', element: <AdminFlagsPage /> },
+              { path: '/admin/model', element: <AdminModelPage /> },
             ],
           },
         ],

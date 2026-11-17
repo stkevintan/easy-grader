@@ -1,9 +1,11 @@
-import { BadRequestException, Body, Controller, Delete, Get, HttpCode, NotFoundException, Param, ParseIntPipe, Patch, Post, Query } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, HttpCode, Inject, NotFoundException, Param, ParseIntPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDateString, IsIn, IsInt, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateIf } from 'class-validator';
+import { IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsObject, IsOptional, IsString, Length, Max, MaxLength, Min, ValidateIf } from 'class-validator';
 import { DataSource, In, Repository } from 'typeorm';
 import type { AdapterConfig } from '../adapters/adapter-config';
+import { APP_CONFIG, type AppConfig } from '../config';
+import { ModelSettingsService } from '../judge/model-settings.service';
 import { AdaptersService } from '../adapters/adapters.service';
 import { toPublicUser } from '../auth/auth.service';
 import { BillingService } from '../billing/billing.service';
@@ -23,6 +25,19 @@ class PageQuery {
 
 class StatsQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) orgId?: number;
+}
+
+/** 控制台改模型配置；不传的字段保持原样，传空字符串表示退回环境变量 */
+class UpdateModelDto {
+  @IsOptional() @IsString() @MaxLength(100) name?: string;
+  @IsOptional() @IsString() @MaxLength(300) baseUrl?: string;
+  @IsOptional() @IsString() @MaxLength(400) apiKey?: string;
+  @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(2) temperature?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(256) @Max(200_000) maxTokens?: number;
+  @IsOptional() @IsIn(['', 'none', 'minimal', 'low', 'medium', 'high']) reasoningEffort?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(5) sampleCount?: number;
+  @IsOptional() @IsBoolean() scoreWithImage?: boolean;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(1000) @Max(600_000) timeoutMs?: number;
 }
 
 class CreateUserDto {
@@ -111,6 +126,8 @@ export class AdminController {
     private readonly billing: BillingService,
     private readonly adapters: AdaptersService,
     private readonly invites: InviteService,
+    @Inject(APP_CONFIG) private readonly cfg: AppConfig,
+    private readonly modelSettings: ModelSettingsService,
   ) {}
 
   /** orgId 给出时只统计该组织成员 */
@@ -162,6 +179,85 @@ export class AdminController {
         users: Number(d.users),
       })),
     };
+  }
+
+  // ---------- 模型 ----------
+
+  /**
+   * 当前生效的模型配置：环境变量 + 控制台里的覆盖值。
+   * 密钥只报「有没有配」，不返回任何片段。
+   */
+  @Get('model')
+  async modelInfo() {
+    const m = this.modelSettings.current();
+    const since = new Date(Date.now() - 7 * 86400_000).toISOString().replace('T', ' ').slice(0, 19);
+    const rows = await this.ds.query(
+      `SELECT model,
+              COUNT(*) AS total,
+              SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done,
+              SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS failed,
+              AVG(CASE WHEN status = 'done' THEN latencyMs END) AS latency
+         FROM judge_records WHERE createdAt >= ? GROUP BY model ORDER BY total DESC`,
+      [since],
+    );
+    return {
+      name: m.name,
+      baseUrl: m.baseUrl,
+      /** 没配 key 时服务端用 mock 评分，分数是假的 */
+      apiKeyConfigured: m.apiKey.length > 0,
+      ready: m.apiKey.length > 0 && !!m.name && !!m.baseUrl,
+      params: {
+        timeoutMs: m.timeoutMs,
+        temperature: m.temperature,
+        maxTokens: m.maxTokens,
+        reasoningEffort: m.reasoningEffort || '(不传)',
+        maxRetries: m.maxRetries,
+        retryDelayMs: m.retryDelayMs,
+        scoreWithImage: m.scoreWithImage,
+        sampleCount: m.sampleCount,
+        ocrTwoPass: this.cfg.ocr.twoPass,
+        maxImageBytes: this.cfg.maxImageBytes,
+      },
+      profiles: Object.entries(this.cfg.modelProfiles).map(([name, p]) => ({
+        name,
+        overrides: Object.keys(p).filter((k) => k !== 'apiKey'),
+      })),
+      gold: { enabled: this.cfg.gold.enabled, maxExamples: this.cfg.gold.maxExamples },
+      /** 哪些字段是控制台覆盖的（其余来自环境变量） */
+      overrides: this.modelSettings.overrideKeys(),
+      updated: this.modelSettings.updated(),
+      usage: rows.map((r: Record<string, unknown>) => ({
+        model: String(r.model || '(未记录)'),
+        total: Number(r.total),
+        done: Number(r.done ?? 0),
+        failed: Number(r.failed ?? 0),
+        avgLatencyMs: Math.round(Number(r.latency ?? 0)),
+      })),
+    };
+  }
+
+  /** 改模型配置，保存后立刻生效（不用重新部署） */
+  @Put('model')
+  async updateModel(@CurrentUser() u: AuthUser, @Body() dto: UpdateModelDto) {
+    if (dto.baseUrl !== undefined && dto.baseUrl !== '') {
+      let url: URL;
+      try {
+        url = new URL(dto.baseUrl);
+      } catch {
+        throw new BadRequestException('接口地址不是合法的 URL，例如 https://api.deepseek.com');
+      }
+      if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new BadRequestException('接口地址必须是 http(s)');
+    }
+    const patch = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
+    await this.modelSettings.update(patch, { id: u.id, name: u.username });
+    return this.modelInfo();
+  }
+
+  /** 全部退回环境变量 */
+  @Delete('model')
+  async resetModel(@CurrentUser() u: AuthUser) {
+    await this.modelSettings.reset({ id: u.id, name: u.username });
+    return this.modelInfo();
   }
 
   // ---------- 用户 ----------

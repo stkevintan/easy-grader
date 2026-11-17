@@ -105,6 +105,42 @@ describe('Easy Grader server (e2e)', () => {
     await http.get('/api/admin/users').set(auth(userToken)).expect(403);
   });
 
+  it('管理端能看到当前模型配置，但不返回密钥内容', async () => {
+    const r = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    // 测试环境没配 MODEL_API_KEY：应当明确报出来，而不是假装可用
+    expect(r.body).toMatchObject({ apiKeyConfigured: false, ready: false });
+    expect(r.body.params).toMatchObject({ sampleCount: 1, ocrTwoPass: true, scoreWithImage: true });
+    expect(Array.isArray(r.body.profiles)).toBe(true);
+    expect(Array.isArray(r.body.usage)).toBe(true);
+    expect(JSON.stringify(r.body)).not.toMatch(/apiKey"?\s*:\s*"/);
+    await http.get('/api/admin/model').set(auth(userToken)).expect(403);
+  });
+
+  it('管理端改模型配置立刻生效，密钥不回落，恢复后退回环境变量', async () => {
+    await http.put('/api/admin/model').set(auth(adminToken)).send({ name: 'ui-model', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key' }).expect(200);
+    let h = await http.get('/api/health').expect(200);
+    expect(h.body.model).toBe('ui-model');
+    let m = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    expect(m.body.overrides).toEqual(expect.arrayContaining(['name', 'baseUrl', 'apiKey']));
+    expect(JSON.stringify(m.body)).not.toContain('sk-test-key');
+
+    // 只改一个字段，其余覆盖保持
+    await http.put('/api/admin/model').set(auth(adminToken)).send({ name: 'ui-model-2' }).expect(200);
+    h = await http.get('/api/health').expect(200);
+    expect(h.body.model).toBe('ui-model-2');
+
+    // 地址不合法直接拒绝，且不影响已有配置
+    await http.put('/api/admin/model').set(auth(adminToken)).send({ baseUrl: 'not a url' }).expect(400);
+    h = await http.get('/api/health').expect(200);
+    expect(h.body.model).toBe('ui-model-2');
+
+    await http.delete('/api/admin/model').set(auth(adminToken)).expect(200);
+    h = await http.get('/api/health').expect(200);
+    expect(h.body.model).toBe('mock');
+    m = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    expect(m.body.overrides).toEqual([]);
+  });
+
   it('演示页适配预设已写入并可按 host+path 解析', async () => {
     const r = await http.get('/api/adapters/resolve').query({ host: 'localhost:3000', path: '/demo/index.html' }).set(auth(userToken)).expect(200);
     expect(r.body.preset?.config.scoreMode).toBe('input');

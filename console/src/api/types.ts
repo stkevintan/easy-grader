@@ -213,3 +213,27 @@ export interface FlagDef {
   client: boolean;
   overrides: FlagOverride[];
 }
+
+export interface AdminModelInfo {
+  name: string;
+  baseUrl: string;
+  apiKeyConfigured: boolean;
+  ready: boolean;
+  params: {
+    timeoutMs: number;
+    temperature: number;
+    maxTokens: number;
+    reasoningEffort: string;
+    maxRetries: number;
+    retryDelayMs: number;
+    scoreWithImage: boolean;
+    sampleCount: number;
+    ocrTwoPass: boolean;
+    maxImageBytes: number;
+  };
+  profiles: { name: string; overrides: string[] }[];
+  gold: { enabled: boolean; maxExamples: number };
+  overrides: string[];
+  updated: { at: string | null; byName: string };
+  usage: { model: string; total: number; done: number; failed: number; avgLatencyMs: number }[];
+}
