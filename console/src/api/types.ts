@@ -223,6 +223,7 @@ export interface AdminModelProfile {
     temperature: number;
     maxTokens: number;
     reasoningEffort: string;
+    ocrReasoningEffort: string;
     sampleCount: number;
     scoreWithImage: boolean;
     timeoutMs: number;

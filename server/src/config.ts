@@ -22,6 +22,8 @@ export interface AppConfig {
     maxTokens: number;
     /** 推理模型的思考强度；空字符串表示不传，由服务商默认 */
     reasoningEffort: '' | 'none' | 'minimal' | 'low' | 'medium' | 'high';
+    /** 转录阶段的思考强度；不单独设置时沿用 reasoningEffort */
+    ocrReasoningEffort: '' | 'none' | 'minimal' | 'low' | 'medium' | 'high';
     /** 上游 5xx / 429 / 网络错误 / 超时时的重试次数（不含首次请求） */
     maxRetries: number;
     /** 首次重试的等待毫秒数，之后每次翻倍 */
@@ -166,6 +168,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       // 默认 low：明显更快，实测评分结论不变。
       // 设为 none / off / disabled 可完全不传 reasoning_effort（模型不认识该参数时用）。
       reasoningEffort: resolveReasoningEffort(env.MODEL_REASONING_EFFORT),
+      // 转录只是照着图抄字，思考纯属浪费；默认跟打分一致，需要时用 MODEL_OCR_REASONING_EFFORT 单独调
+      ocrReasoningEffort: resolveReasoningEffort(env.MODEL_OCR_REASONING_EFFORT || env.MODEL_REASONING_EFFORT),
       maxRetries: Math.min(5, Math.max(0, Math.floor(num(env.MODEL_MAX_RETRIES, 2)))),
       retryDelayMs: Math.max(0, num(env.MODEL_RETRY_DELAY_MS, 800)),
       scoreWithImage: bool(env.SCORE_WITH_IMAGE, true),

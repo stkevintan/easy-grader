@@ -322,7 +322,7 @@ export class ModelService implements OnModuleInit {
         try {
           const r = await this.withRetry('识别答卷', () => {
             attempts += 1;
-            return this.requestCompletion(m, imageDataUrl, ocrPrompt);
+            return this.requestCompletion(m, imageDataUrl, ocrPrompt, m.ocrReasoningEffort);
           });
           transcript = r.text.trim().slice(0, 4000);
           ocr = {
@@ -501,8 +501,11 @@ export class ModelService implements OnModuleInit {
     m: ModelConfig,
     imageDataUrl: string | undefined,
     prompt: string,
+    /** 覆盖这一阶段的思考强度；不传用模型方案里的值（转录阶段用它单独降强度） */
+    reasoningOverride?: ModelConfig['reasoningEffort'],
   ): Promise<{ text: string; response: TraceResponse }> {
-    const { baseUrl, apiKey, name, timeoutMs, temperature, maxTokens, reasoningEffort } = m;
+    const { baseUrl, apiKey, name, timeoutMs, temperature, maxTokens } = m;
+    const reasoningEffort = reasoningOverride ?? m.reasoningEffort;
     let res: Response;
     try {
       res = await fetch(`${baseUrl}/chat/completions`, {

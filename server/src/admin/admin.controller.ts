@@ -35,6 +35,7 @@ class UpdateModelDto {
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(2) temperature?: number;
   @IsOptional() @Type(() => Number) @IsInt() @Min(256) @Max(200_000) maxTokens?: number;
   @IsOptional() @IsIn(['', 'none', 'minimal', 'low', 'medium', 'high']) reasoningEffort?: string;
+  @IsOptional() @IsIn(['', 'none', 'minimal', 'low', 'medium', 'high']) ocrReasoningEffort?: string;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(5) sampleCount?: number;
   @IsOptional() @IsBoolean() scoreWithImage?: boolean;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1000) @Max(600_000) timeoutMs?: number;

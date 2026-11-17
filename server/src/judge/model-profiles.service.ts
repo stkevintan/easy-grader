@@ -13,6 +13,7 @@ export const PROFILE_FIELDS = [
   'temperature',
   'maxTokens',
   'reasoningEffort',
+  'ocrReasoningEffort',
   'sampleCount',
   'scoreWithImage',
   'timeoutMs',
@@ -26,6 +27,8 @@ export type ProfilePatch = Partial<{
   temperature: number;
   maxTokens: number;
   reasoningEffort: string;
+  /** 转录阶段的思考强度；空字符串表示不传 */
+  ocrReasoningEffort: string;
   sampleCount: number;
   scoreWithImage: boolean;
   timeoutMs: number;
@@ -40,6 +43,7 @@ export interface ProfileView {
     temperature: number;
     maxTokens: number;
     reasoningEffort: string;
+    ocrReasoningEffort: string;
     sampleCount: number;
     scoreWithImage: boolean;
     timeoutMs: number;
@@ -96,6 +100,7 @@ export class ModelProfilesService implements OnModuleInit {
       if (row.temperature != null) out.temperature = row.temperature;
       if (row.maxTokens != null) out.maxTokens = row.maxTokens;
       if (row.reasoningEffort != null) out.reasoningEffort = row.reasoningEffort as ModelConfig['reasoningEffort'];
+      if (row.ocrReasoningEffort != null) out.ocrReasoningEffort = row.ocrReasoningEffort as ModelConfig['ocrReasoningEffort'];
       if (row.sampleCount != null) out.sampleCount = row.sampleCount;
       if (row.scoreWithImage != null) out.scoreWithImage = row.scoreWithImage;
       if (row.timeoutMs != null) out.timeoutMs = row.timeoutMs;
@@ -116,6 +121,7 @@ export class ModelProfilesService implements OnModuleInit {
         temperature: m.temperature,
         maxTokens: m.maxTokens,
         reasoningEffort: m.reasoningEffort || '',
+        ocrReasoningEffort: m.ocrReasoningEffort === '' ? '' : m.ocrReasoningEffort,
         sampleCount: m.sampleCount,
         scoreWithImage: m.scoreWithImage,
         timeoutMs: m.timeoutMs,
@@ -144,6 +150,7 @@ export class ModelProfilesService implements OnModuleInit {
     if (patch.temperature !== undefined) next.temperature = patch.temperature;
     if (patch.maxTokens !== undefined) next.maxTokens = patch.maxTokens;
     if (patch.reasoningEffort !== undefined) next.reasoningEffort = patch.reasoningEffort as ModelConfig['reasoningEffort'];
+    if (patch.ocrReasoningEffort !== undefined) next.ocrReasoningEffort = patch.ocrReasoningEffort as ModelConfig['ocrReasoningEffort'];
     if (patch.sampleCount !== undefined) next.sampleCount = patch.sampleCount;
     if (patch.scoreWithImage !== undefined) next.scoreWithImage = patch.scoreWithImage;
     if (patch.timeoutMs !== undefined) next.timeoutMs = patch.timeoutMs;
@@ -185,6 +192,7 @@ export class ModelProfilesService implements OnModuleInit {
     if (patch.temperature !== undefined) row.temperature = patch.temperature;
     if (patch.maxTokens !== undefined) row.maxTokens = patch.maxTokens;
     if (patch.reasoningEffort !== undefined) row.reasoningEffort = patch.reasoningEffort;
+    if (patch.ocrReasoningEffort !== undefined) row.ocrReasoningEffort = patch.ocrReasoningEffort;
     if (patch.sampleCount !== undefined) row.sampleCount = patch.sampleCount;
     if (patch.scoreWithImage !== undefined) row.scoreWithImage = patch.scoreWithImage;
     if (patch.timeoutMs !== undefined) row.timeoutMs = patch.timeoutMs;

@@ -237,6 +237,8 @@ export class ModelProfile {
   @Column({ type: 'integer', nullable: true }) maxTokens!: number | null;
   /** '' 表示不传该参数 */
   @Column({ type: 'varchar', nullable: true }) reasoningEffort!: string | null;
+  /** 转录阶段的思考强度；null 表示跟 reasoningEffort 一样，'' 表示不传 */
+  @Column({ type: 'varchar', nullable: true }) ocrReasoningEffort!: string | null;
   @Column({ type: 'integer', nullable: true }) sampleCount!: number | null;
   @Column({ type: 'boolean', nullable: true }) scoreWithImage!: boolean | null;
   @Column({ type: 'integer', nullable: true }) timeoutMs!: number | null;

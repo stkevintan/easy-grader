@@ -45,7 +45,15 @@ function fieldsFor(p: AdminModelProfile | null): DialogField[] {
     },
     { name: 'sampleCount', label: '并行采样次数（1–5）', type: 'number', value: p?.params.sampleCount ?? 1, min: 1, max: 5 },
     { name: 'maxTokens', label: '单次最大输出 token', type: 'number', value: p?.params.maxTokens ?? 8000, min: 256, max: 200000 },
-    { name: 'reasoningEffort', label: '思考强度', type: 'select', value: p?.params.reasoningEffort ?? '', options: EFFORT_OPTIONS },
+    { name: 'reasoningEffort', label: '打分阶段思考强度', type: 'select', value: p?.params.reasoningEffort ?? '', options: EFFORT_OPTIONS },
+    {
+      name: 'ocrReasoningEffort',
+      label: '转录阶段思考强度',
+      type: 'select',
+      value: p?.params.ocrReasoningEffort || 'none',
+      options: EFFORT_OPTIONS,
+      hint: '转录只是照着图抄字，none 最快，也不会把输出额度耗在推理上',
+    },
     { name: 'temperature', label: '温度（0–2）', type: 'number', value: p?.params.temperature ?? 0.1, min: 0, max: 2, step: 0.1 },
     { name: 'timeoutMs', label: '超时（毫秒）', type: 'number', value: p?.params.timeoutMs ?? 60000, min: 1000, max: 600000 },
     { name: 'scoreWithImage', label: '打分阶段把答卷图片一起发给模型', type: 'checkbox', value: p?.params.scoreWithImage ?? true },
@@ -81,6 +89,7 @@ export function AdminModelPage() {
       sampleCount: Number(values.sampleCount),
       maxTokens: Number(values.maxTokens),
       reasoningEffort: String(values.reasoningEffort),
+      ocrReasoningEffort: String(values.ocrReasoningEffort),
       temperature: Number(values.temperature),
       timeoutMs: Number(values.timeoutMs),
       scoreWithImage: Boolean(values.scoreWithImage),
@@ -152,7 +161,8 @@ export function AdminModelPage() {
       title: '参数',
       render: (p) => (
         <span className="text-xs text-slate-500">
-          采样 {p.params.sampleCount} · token {p.params.maxTokens} · {p.params.reasoningEffort || '默认强度'}
+          采样 {p.params.sampleCount} · token {p.params.maxTokens} · 转录 {p.params.ocrReasoningEffort || '默认'} / 打分{' '}
+          {p.params.reasoningEffort || '默认'}
         </span>
       ),
     },

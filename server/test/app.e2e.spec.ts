@@ -146,12 +146,13 @@ describe('Easy Grader server (e2e)', () => {
     const saved = await http
       .put('/api/admin/model/fast')
       .set(auth(adminToken))
-      .send({ model: 'ui-model-fast', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key', sampleCount: 3 })
+      .send({ model: 'ui-model-fast', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key', sampleCount: 3, ocrReasoningEffort: 'none' })
       .expect(200);
     expect(saved.body.profiles.map((p: { name: string }) => p.name)).toEqual(expect.arrayContaining(['default', 'fast']));
     const fast = saved.body.profiles.find((p: { name: string }) => p.name === 'fast');
     expect(fast).toMatchObject({ model: 'ui-model-fast', vision: { ok: true } });
     expect(fast.params.sampleCount).toBe(3);
+    expect(fast.params.ocrReasoningEffort).toBe('none');
 
     // 只改一个字段，其余保留
     await http.put('/api/admin/model/default').set(auth(adminToken)).send({ model: 'ui-model-2' }).expect(200);
