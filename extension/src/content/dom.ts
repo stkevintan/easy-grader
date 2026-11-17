@@ -35,8 +35,17 @@ export function readText(el: Element | null): string {
   return ((el as HTMLElement).innerText ?? el.textContent ?? '').replace(/\s+/g, ' ').trim();
 }
 
-/** 用原生 setter 写值，兼容 React/Vue 受控输入框（直接改 .value 不会触发它们的状态更新） */
-export function setInputValue(el: HTMLInputElement | HTMLTextAreaElement, value: string) {
+/**
+ * 用原生 setter 写值，兼容 React/Vue 受控输入框（直接改 .value 不会触发它们的状态更新）。
+ * 默认不 blur、不按 Enter：有些平台把 blur / Enter 当成「保存并跳到下一题」，
+ * 写完分还没读回校验就已经翻页，读回来的是下一题的空白输入框。
+ */
+export function setInputValue(
+  el: HTMLInputElement | HTMLTextAreaElement,
+  value: string,
+  opts: { blur?: boolean; enter?: boolean } = {},
+) {
+  const { blur = true, enter = false } = opts;
   const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
   el.focus();
@@ -44,8 +53,8 @@ export function setInputValue(el: HTMLInputElement | HTMLTextAreaElement, value:
   else el.value = value;
   el.dispatchEvent(new Event('input', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
-  el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
-  el.blur();
+  if (enter) el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+  if (blur) el.blur();
 }
 
 /** clickType=events：模拟完整的指针事件序列，给只监听 mousedown/pointerup 的平台用 */

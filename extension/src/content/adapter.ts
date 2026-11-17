@@ -159,14 +159,18 @@ function inputTarget(cfg: AdapterConfig): HTMLInputElement | HTMLTextAreaElement
   return el;
 }
 
-export function setScore(cfg: AdapterConfig, score: number, maxScore: number) {
+/**
+ * 写分。默认写完不 blur、不按 Enter：有些平台把这两件事当成「保存并切换下一题」，
+ * 写完立刻翻页，后面读回校验读到的是下一题的空白框，误判成平台拒绝了输入。
+ */
+export function setScore(cfg: AdapterConfig, score: number, maxScore: number, opts: { blur?: boolean } = {}) {
   if (cfg.scoreMode === 'buttons') {
     const btn = findScoreButton(cfg, score, maxScore);
     if (!btn) throw new AdapterError(`打分板上找不到「${fmt(score)}」分的按钮，请手动给分`);
     clickElement(btn, cfg.scoreButtons.clickType);
     return;
   }
-  setInputValue(inputTarget(cfg), fmt(score));
+  setInputValue(inputTarget(cfg), fmt(score), { blur: opts.blur ?? false, enter: false });
 }
 
 /** 当前输入框里读到的分数文本；读不到返回 null */

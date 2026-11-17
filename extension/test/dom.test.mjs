@@ -151,6 +151,20 @@ test('rejectText / waitRejectChange：识别平台「分数不能为空」提示
   assert.equal(await waiting, '分数不能为空');
 });
 
+test('setScore 不再 blur / 按 Enter：有平台把这两个动作当成「保存并切下一题」', () => {
+  const { doc, t } = page(`<input id="score" />`);
+  const el = doc.getElementById('score');
+  const seen = [];
+  el.addEventListener('blur', () => seen.push('blur'));
+  el.addEventListener('keyup', (e) => seen.push('keyup:' + e.key));
+  t.adapter.setScore(baseCfg(), 4, 6);
+  assert.equal(el.value, '4');
+  assert.deepEqual(seen, [], '写分时不应触发 blur 或 Enter');
+  // 需要时仍可以显式要求 blur
+  t.adapter.setScore(baseCfg(), 5, 6, { blur: true });
+  assert.deepEqual(seen, ['blur']);
+});
+
 test('verifyScore 等平台自己的格式化：稍后才变成「4.50」也算写入成功', async () => {
   const { doc, t } = page(`<input id="score" />`);
   t.adapter.setScore(baseCfg(), 4.5, 6);
