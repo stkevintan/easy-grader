@@ -109,7 +109,8 @@ export class ModelProfilesService implements OnModuleInit {
     // 转录强度：显式设置优先，否则继承这个方案实际的打分强度（不是全局的）
     const explicitOcr =
       (row?.ocrReasoningEffort as ModelConfig['ocrReasoningEffort'] | null) ??
-      (name !== 'default' ? this.cfg.modelProfiles[name]?.ocrReasoningEffort : undefined);
+      (name !== 'default' ? this.cfg.modelProfiles[name]?.ocrReasoningEffort : undefined) ??
+      this.cfg.model.ocrReasoningEffort;
     out.ocrReasoningEffort = explicitOcr ?? out.reasoningEffort;
     return out;
   }
@@ -203,13 +204,14 @@ export class ModelProfilesService implements OnModuleInit {
   /** 重新探测一个方案，把结果写回去 */
   async test(name: string): Promise<ProfileView> {
     if (!this.has(name)) throw new NotFoundException('模型方案不存在');
-    const existing = this.rows.get(name);
-    const row: ModelProfile = existing ? ({ ...existing } as ModelProfile) : this.repo.create({ name });
     const probe = await this.vision.probe(this.config(name));
-    row.visionOk = probe.ok;
-    row.visionError = probe.error;
-    row.visionCheckedAt = new Date();
-    await this.repo.save(row);
+    // 探测期间别人可能改了/删了这个方案：只把视觉结果写到当前这一行，别整行覆盖
+    const fresh = await this.repo.findOneBy({ name });
+    if (!fresh) throw new NotFoundException('模型方案在处理过程中被删除');
+    fresh.visionOk = probe.ok;
+    fresh.visionError = probe.error;
+    fresh.visionCheckedAt = new Date();
+    await this.repo.save(fresh);
     await this.reload();
     return this.view(name);
   }
@@ -232,6 +234,10 @@ export class ModelProfilesService implements OnModuleInit {
       // model / baseUrl 是非空列，回退时写成空串（等价于「沿用环境变量」）；其余可空
       row.model = '';
       row.baseUrl = '';
+      // 视觉探测结果属于旧模型，恢复后必须重新探测
+      row.visionOk = false;
+      row.visionCheckedAt = null;
+      row.visionError = '';
       for (const k of PROFILE_FIELDS) {
         if (k === 'model' || k === 'baseUrl') continue;
         (row as unknown as Record<string, unknown>)[k] = null;

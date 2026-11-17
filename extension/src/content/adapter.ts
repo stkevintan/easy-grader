@@ -195,11 +195,16 @@ export async function verifyScore(cfg: AdapterConfig, score: number, timeoutMs =
   if (cfg.scoreMode === 'buttons') return true;
   const want = Number(fmt(score));
   const deadline = Date.now() + timeoutMs;
+  // 读到一次不算数：平台可能稍后再改写输入框，值要稳定一小段时间才算写入成功
+  let matchedAt = 0;
   for (;;) {
     const text = readScore(cfg);
-    if (text !== null && parseScore(text) === want) return true;
+    const ok = text !== null && parseScore(text) === want;
+    if (ok && !matchedAt) matchedAt = Date.now();
+    if (!ok) matchedAt = 0;
+    if (matchedAt && Date.now() - matchedAt >= 150) return true;
     if (Date.now() >= deadline) return false;
-    await sleep(80);
+    await sleep(60);
   }
 }
 

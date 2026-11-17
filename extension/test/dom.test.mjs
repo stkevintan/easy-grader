@@ -174,6 +174,15 @@ test('verifyScore 等平台自己的格式化：稍后才变成「4.50」也算�
   assert.equal(await t.adapter.verifyScore(baseCfg(), 4.5), true);
 });
 
+test('verifyScore 要稳定：刚读到又被平台改写，不算成功', async () => {
+  const { doc, t } = page(`<input id="score" />`);
+  t.adapter.setScore(baseCfg(), 4.5, 6);
+  setTimeout(() => {
+    doc.getElementById('score').value = '5';
+  }, 100);
+  assert.equal(await t.adapter.verifyScore(baseCfg(), 4.5, 600), false);
+});
+
 test('verifyScore 容忍单位：输入框里是「4.5 分」也认', async () => {
   const { doc, t } = page(`<input id="score" />`);
   doc.getElementById('score').value = '4.5 分';

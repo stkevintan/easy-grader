@@ -55,7 +55,7 @@ function fieldsFor(p: AdminModelProfile | null): DialogField[] {
       hint: '转录只是照着图抄字，none 最快，也不会把输出额度耗在推理上',
     },
     { name: 'temperature', label: '温度（0–2）', type: 'number', value: p?.params.temperature ?? 0.1, min: 0, max: 2, step: 0.1 },
-    { name: 'timeoutMs', label: '超时（毫秒）', type: 'number', value: p?.params.timeoutMs ?? 60000, min: 1000, max: 600000 },
+    { name: 'timeoutMs', label: '超时（毫秒，最多 120000）', type: 'number', value: p?.params.timeoutMs ?? 60000, min: 1000, max: 120000 },
     { name: 'scoreWithImage', label: '打分阶段把答卷图片一起发给模型', type: 'checkbox', value: p?.params.scoreWithImage ?? true },
   ];
 }

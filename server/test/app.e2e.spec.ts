@@ -66,6 +66,13 @@ describe('Easy Grader server (e2e)', () => {
 
   const auth = (t: string) => ({ authorization: `Bearer ${t}` });
 
+  it('OCR 思考强度：不设就留给方案继承，设了就用它', () => {
+    expect(loadConfig({}).model.ocrReasoningEffort).toBeUndefined();
+    expect(loadConfig({ MODEL_OCR_REASONING_EFFORT: 'none' }).model.ocrReasoningEffort).toBe('none');
+    // off 表示不传该参数
+    expect(loadConfig({ MODEL_OCR_REASONING_EFFORT: 'off' }).model.ocrReasoningEffort).toBe('');
+  });
+
   it('health 不需要登录', async () => {
     const r = await http.get('/api/health').expect(200);
     expect(r.body).toMatchObject({ ok: true, model: 'mock', allowRegister: true });
@@ -174,7 +181,12 @@ describe('Easy Grader server (e2e)', () => {
     expect(slashFast.params.ocrReasoningEffort).toBe('none');
     // 恢复一个非默认方案：model/baseUrl 是非空列，不能因为写 null 而 500
     const resetFast = await http.post('/api/admin/model/fast/reset').set(auth(adminToken)).expect(201);
-    expect(resetFast.body.profiles.find((p: { name: string }) => p.name === 'fast')).toMatchObject({ model: '', overrides: [] });
+    expect(resetFast.body.profiles.find((p: { name: string }) => p.name === 'fast')).toMatchObject({
+      model: '',
+      overrides: [],
+      // 视觉结果属于旧模型，恢复后必须重新探测
+      vision: { ok: false, checkedAt: null, error: '' },
+    });
 
     await http.delete('/api/admin/model/fast').set(auth(adminToken)).expect(200);
     // 探测失败的保存不能改掉线上正在用的配置（缓存里不能先被清空）
