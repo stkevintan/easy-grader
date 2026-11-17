@@ -169,12 +169,34 @@ export function setScore(cfg: AdapterConfig, score: number, maxScore: number) {
   setInputValue(inputTarget(cfg), fmt(score));
 }
 
-/** 写完分后读回来校验，避免平台把输入改掉/拒绝了我们却继续提交 */
-export function verifyScore(cfg: AdapterConfig, score: number): boolean {
-  if (cfg.scoreMode === 'buttons') return true;
+/** 当前输入框里读到的分数文本；读不到返回 null */
+export function readScore(cfg: AdapterConfig): string | null {
   const inputs = queryAll(cfg.scoreInput.selectors).filter(isVisible);
-  if (inputs.length !== 1) return false;
-  return Number((inputs[0] as HTMLInputElement).value) === Number(fmt(score));
+  if (inputs.length !== 1) return null;
+  return String((inputs[0] as HTMLInputElement).value ?? '');
+}
+
+/** 把平台输入框里的文本解析成分数：允许「3.5 分」「3.50」这种写法 */
+function parseScore(text: string): number {
+  const m = text.replace(/[，,]/g, '').match(/-?\d+(?:\.\d+)?/);
+  return m ? Number(m[0]) : Number.NaN;
+}
+
+/**
+ * 写完分后读回来校验，避免平台把输入改掉/拒绝了我们却继续提交。
+ * 平台可能在自己的一套状态更新后重写输入框（受控组件、格式化、异步校验），
+ * 所以这里轮询一段时间，期间只要读到期望的分数就算成功，而不是只读一次。
+ */
+export async function verifyScore(cfg: AdapterConfig, score: number, timeoutMs = 1200): Promise<boolean> {
+  if (cfg.scoreMode === 'buttons') return true;
+  const want = Number(fmt(score));
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const text = readScore(cfg);
+    if (text !== null && parseScore(text) === want) return true;
+    if (Date.now() >= deadline) return false;
+    await sleep(80);
+  }
 }
 
 /**
