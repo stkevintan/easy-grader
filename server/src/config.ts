@@ -76,6 +76,7 @@ const PROFILE_KEYS: Record<string, 'string' | 'number' | 'boolean'> = {
   temperature: 'number',
   maxTokens: 'number',
   reasoningEffort: 'string',
+  ocrReasoningEffort: 'string',
   scoreWithImage: 'boolean',
   sampleCount: 'number',
 };
@@ -99,6 +100,10 @@ export function parseModelProfiles(raw: string | undefined): Record<string, Part
       const want = Object.hasOwn(PROFILE_KEYS, k) ? PROFILE_KEYS[k] : undefined;
       if (!want) throw new Error(`MODEL_PROFILES.${name} 不支持字段 ${k}`);
       if (typeof x !== want || (want === 'number' && !Number.isFinite(x))) throw new Error(`MODEL_PROFILES.${name}.${k} 应为 ${want}`);
+      if (k === 'reasoningEffort' || k === 'ocrReasoningEffort') {
+        const ok = ['', 'none', 'minimal', 'low', 'medium', 'high', 'off', 'default', 'disabled'].includes(x as string);
+        if (!ok) throw new Error(`MODEL_PROFILES.${name}.${k} 只能是 none/minimal/low/medium/high/off`);
+      }
       if (want === 'string' && ['baseUrl', 'apiKey', 'name'].includes(k) && !(x as string).trim()) throw new Error(`MODEL_PROFILES.${name}.${k} 不能为空`);
       // 上限 60 秒：两阶段 + 重试的总时间要留在扩展评分请求的 240 秒期限内
       if (k === 'timeoutMs' && !(Number.isInteger(x) && (x as number) >= 1000 && (x as number) <= 60_000)) throw new Error(`MODEL_PROFILES.${name}.timeoutMs 应为 1000–60000 的整数`);

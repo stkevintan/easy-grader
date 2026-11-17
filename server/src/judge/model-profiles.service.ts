@@ -152,6 +152,10 @@ export class ModelProfilesService implements OnModuleInit {
   /** 保存方案；改过模型/地址/密钥或第一次保存时先做视觉探测，探测不过直接拒绝 */
   async save(name: string, patch: ProfilePatch, actor: { id: number; name: string }): Promise<void> {
     if (!/^[\w.-]{1,40}$/.test(name)) throw new BadRequestException('方案名只能是字母、数字、下划线、点和短横线');
+    // @IsOptional() 会放过 null；null 不是「不改」，直接拒绝，免得后面 .trim() 抛 500
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === null) throw new BadRequestException(`${k} 不能为 null`);
+    }
     const existing = this.rows.get(name);
     // 在副本上改，探测通过、落库成功之后才更新缓存：探测失败时线上配置不能被动过
     const row: ModelProfile = existing ? ({ ...existing } as ModelProfile) : this.repo.create({ name });
@@ -159,7 +163,11 @@ export class ModelProfilesService implements OnModuleInit {
 
     if (patch.model !== undefined) next.name = patch.model.trim();
     if (patch.baseUrl !== undefined) next.baseUrl = patch.baseUrl.trim().replace(/\/+$/, '');
-    if (patch.apiKey !== undefined) next.apiKey = patch.apiKey === '' ? this.cfg.model.apiKey : patch.apiKey.trim();
+    if (patch.apiKey !== undefined) {
+      // 清掉覆盖后，这个方案实际会继承 MODEL_PROFILES 里的 key（如果有），否则才是全局 MODEL_API_KEY
+      const inherited = (name !== 'default' ? this.cfg.modelProfiles[name]?.apiKey : '') || this.cfg.model.apiKey;
+      next.apiKey = patch.apiKey === '' ? inherited : patch.apiKey.trim();
+    }
     if (patch.temperature !== undefined) next.temperature = patch.temperature;
     if (patch.maxTokens !== undefined) next.maxTokens = patch.maxTokens;
     if (patch.reasoningEffort !== undefined) next.reasoningEffort = patch.reasoningEffort as ModelConfig['reasoningEffort'];

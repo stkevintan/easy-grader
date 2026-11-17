@@ -168,6 +168,10 @@ describe('Easy Grader server (e2e)', () => {
 
     // 地址不合法直接拒绝
     await http.put('/api/admin/model/default').set(auth(adminToken)).send({ baseUrl: 'not a url' }).expect(400);
+    // null 不是「不改」：显式传 null 要被拒，而不是 500
+    for (const field of ['model', 'baseUrl', 'apiKey']) {
+      await http.put('/api/admin/model/default').set(auth(adminToken)).send({ [field]: null }).expect(400);
+    }
 
     // 尾部斜杠应被规范化（否则评分时拼出 //chat/completions）
     const slash = await http
@@ -1209,6 +1213,12 @@ describe('纯函数', () => {
     expect(hostMatches('a.b.foo.com', 'foo.com')).toBe(true);
     expect(hostMatches('evilfoo.com', 'foo.com')).toBe(false);
     expect(hostMatches('localhost:3000', 'localhost')).toBe(true);
+  });
+
+  it('MODEL_PROFILES 支持 ocrReasoningEffort，非法值报错', () => {
+    const p = parseModelProfiles('{"fast":{"name":"qwen-vl-max","ocrReasoningEffort":"none"}}');
+    expect(p.fast).toMatchObject({ name: 'qwen-vl-max', ocrReasoningEffort: 'none' });
+    expect(() => parseModelProfiles('{"fast":{"ocrReasoningEffort":"bogus"}}')).toThrow(/ocrReasoningEffort/);
   });
 
   it('MODEL_PROFILES 解析与校验', () => {

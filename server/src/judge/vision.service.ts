@@ -30,9 +30,12 @@ export class VisionService {
     if (!m.name) return fail('没有模型名');
 
     const url = `${m.baseUrl.replace(/\/+$/, '')}/chat/completions`;
+    // 用这个方案实际会用的思考强度和输出预算：否则要关掉思考才能读图的模型会在探测这一步被判失败
+    const effort = m.ocrReasoningEffort ?? m.reasoningEffort;
     const body = {
       model: m.name,
-      max_tokens: 4096,
+      max_tokens: Math.min(Math.max(m.maxTokens, 256), 8000),
+      ...(effort ? { reasoning_effort: effort } : {}),
       messages: [
         {
           role: 'user',
