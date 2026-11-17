@@ -6,27 +6,30 @@ import { AdminModelPage } from './pages/admin/model';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 
-const info = (over: Record<string, unknown> = {}) => ({
-  name: 'qwen-vl-max',
+const profile = (over: Record<string, unknown> = {}) => ({
+  name: 'default',
+  model: 'qwen-vl-max',
   baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   apiKeyConfigured: true,
-  ready: true,
   params: {
-    timeoutMs: 60000,
     temperature: 0.1,
     maxTokens: 8000,
     reasoningEffort: 'low',
-    maxRetries: 2,
-    retryDelayMs: 800,
-    scoreWithImage: true,
     sampleCount: 1,
-    ocrTwoPass: true,
-    maxImageBytes: 4 * 1024 * 1024,
+    scoreWithImage: true,
+    timeoutMs: 60000,
   },
-  profiles: [{ name: 'fast', overrides: ['name', 'reasoningEffort'] }],
+  overrides: ['model'],
+  vision: { ok: true, checkedAt: '2026-11-17T08:00:00.000Z', error: '' },
+  updated: { at: '2026-11-17T08:00:00.000Z', byName: 'admin' },
+  ready: true,
+  ...over,
+});
+
+const info = (over: Record<string, unknown> = {}) => ({
+  profiles: [profile(), profile({ name: 'fast', model: 'qwen-vl-plus', overrides: [] })],
+  fixed: { maxRetries: 2, retryDelayMs: 800, ocrTwoPass: true, maxImageBytes: 4 * 1024 * 1024 },
   gold: { enabled: false, maxExamples: 4 },
-  overrides: [],
-  updated: { at: null, byName: '' },
   usage: [{ model: 'qwen-vl-max', total: 12, done: 11, failed: 1, avgLatencyMs: 4321 }],
   ...over,
 });
@@ -47,38 +50,31 @@ describe('管理端模型页', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('显示当前模型、参数和近 7 天各模型评分', async () => {
+  it('列出多个方案、视觉状态和近 7 天评分', async () => {
     fetchMock.mockImplementation(async () => json(200, info()));
     renderPage();
-    const names = await screen.findAllByText('qwen-vl-max');
-    expect(names.length).toBeGreaterThan(0);
-    expect(screen.getByText('已就绪')).toBeInTheDocument();
-    expect(screen.getByText(/并行采样次数/)).toBeInTheDocument();
-    expect(screen.getByText('fast')).toBeInTheDocument();
+    expect(await screen.findByText('fast')).toBeInTheDocument();
+    expect(screen.getAllByText('可读图')).toHaveLength(2);
     expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '新增方案' })).toBeInTheDocument();
   });
 
-  it('改模型名后保存，只提交改动的字段', async () => {
+  it('默认模型不可用时明确提示会是 mock 分', async () => {
+    fetchMock.mockImplementation(async () => json(200, info({ profiles: [profile({ apiKeyConfigured: false, ready: false })] })));
+    renderPage();
+    expect(await screen.findByText('默认模型不可用')).toBeInTheDocument();
+    expect(screen.getByText(/分数是假的/)).toBeInTheDocument();
+  });
+
+  it('测试读图会调后端并显示结果', async () => {
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => {
-      if (init?.method === 'PUT') return json(200, info({ overrides: ['name'] }));
+      if (init?.method === 'POST') return json(201, profile({ name: 'fast', vision: { ok: false, checkedAt: null, error: 'image_url is not supported' } }));
       return json(200, info());
     });
     renderPage();
-    const input = await screen.findByDisplayValue('qwen-vl-max');
-    await userEvent.clear(input);
-    await userEvent.type(input, 'deepseek-flash');
-    await userEvent.click(screen.getByRole('button', { name: '保存' }));
-    await waitFor(() => expect(fetchMock.mock.calls.some((c) => c[1]?.method === 'PUT')).toBe(true));
-    const put = fetchMock.mock.calls.find((c) => c[1]?.method === 'PUT')!;
-    expect(JSON.parse(String(put[1]?.body))).toEqual({ name: 'deepseek-flash' });
-    expect(await screen.findByText(/下一次评分就用新配置/)).toBeInTheDocument();
-  });
-
-  it('没配 API Key 时直接提示评分为 mock', async () => {
-    fetchMock.mockImplementation(async () => json(200, info({ apiKeyConfigured: false, ready: false, usage: [] })));
-    renderPage();
-    expect(await screen.findByText(/评分走 mock，分数是假的/)).toBeInTheDocument();
-    expect(screen.getByText('不可用')).toBeInTheDocument();
-    expect(screen.getByText('近 7 天还没有评分记录')).toBeInTheDocument();
+    await screen.findByText('fast');
+    await userEvent.click(screen.getAllByText('测试读图')[1]);
+    await waitFor(() => expect(fetchMock.mock.calls.some((c) => String(c[0]).endsWith('/api/admin/model/fast/test'))).toBe(true));
+    expect(await screen.findByText(/「fast」读不了图/)).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { APP_CONFIG, AppConfig, ModelConfig } from '../config';
-import { ModelSettingsService } from './model-settings.service';
+import { ModelProfilesService } from './model-profiles.service';
 import type { GradingTask } from '../entities';
 import { TraceInput, TraceResponse, TraceService } from '../trace/trace.service';
 import type { GoldExample } from './gold.service';
@@ -271,7 +271,7 @@ export class ModelService implements OnModuleInit {
   constructor(
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
     private readonly trace: TraceService,
-    private readonly settings: ModelSettingsService,
+    private readonly profiles: ModelProfilesService,
   ) {}
 
   onModuleInit() {
@@ -279,7 +279,7 @@ export class ModelService implements OnModuleInit {
   }
 
   get isConfigured(): boolean {
-    return this.isUsable(this.settings.current());
+    return this.isUsable(this.profiles.config('default'));
   }
 
   private isUsable(m: ModelConfig): boolean {
@@ -288,9 +288,7 @@ export class ModelService implements OnModuleInit {
 
   /** 模型方案：default 是 MODEL_* 环境变量，其余在 MODEL_PROFILES 里覆盖部分字段；未知方案退回 default */
   modelFor(profile = 'default'): ModelConfig {
-    const base = this.settings.current();
-    const p = profile !== 'default' && Object.hasOwn(this.cfg.modelProfiles, profile) ? this.cfg.modelProfiles[profile] : undefined;
-    return p ? { ...base, ...p } : base;
+    return this.profiles.config(profile);
   }
 
   async grade(
@@ -304,7 +302,7 @@ export class ModelService implements OnModuleInit {
     const m = this.modelFor(profile);
     if (!this.isUsable(m)) {
       // mock 只给没配置模型的开发环境用；生产上选中了不完整的方案要明确失败（退还次数），不能悄悄出假分
-      if (profile !== 'default' && m !== this.settings.current()) throw new ServiceUnavailableException(`模型方案 ${profile} 缺少 baseUrl / apiKey / name，请联系管理员`);
+      if (profile !== 'default' && m !== this.profiles.config('default')) throw new ServiceUnavailableException(`模型方案 ${profile} 缺少 baseUrl / apiKey / name，请联系管理员`);
       return this.mock(task, sha256);
     }
 

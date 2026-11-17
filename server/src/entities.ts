@@ -221,21 +221,29 @@ export class FeatureFlagAudit {
 }
 
 /**
- * 管理端在页面上改的模型覆盖值，只有一行（id=1）。
- * 为 null 的字段沿用环境变量（MODEL_*）；这样既能在控制台改，又能随时「恢复为环境变量」。
+ * 一个模型方案：default 是默认模型，其余名字对应功能开关 model_profile 的取值。
+ * 模型名、地址、密钥和参数都可以在控制台改；没填的字段沿用 MODEL_* 环境变量。
+ * 只有通过视觉探测（能真的读图）的方案才能保存并生效。
  */
-@Entity('model_settings')
-export class ModelSetting {
+@Entity('model_profiles')
+export class ModelProfile {
   @PrimaryGeneratedColumn() id!: number;
-  @Column({ type: 'varchar', nullable: true }) name!: string | null;
-  @Column({ type: 'varchar', nullable: true }) baseUrl!: string | null;
+  @Index({ unique: true }) @Column({ type: 'varchar', length: 64 }) name!: string;
+  @Column({ type: 'varchar', default: '' }) model!: string;
+  @Column({ type: 'varchar', default: '' }) baseUrl!: string;
+  /** null 表示沿用环境变量里的 MODEL_API_KEY */
   @Column({ type: 'varchar', nullable: true }) apiKey!: string | null;
   @Column({ type: 'real', nullable: true }) temperature!: number | null;
   @Column({ type: 'integer', nullable: true }) maxTokens!: number | null;
+  /** '' 表示不传该参数 */
   @Column({ type: 'varchar', nullable: true }) reasoningEffort!: string | null;
   @Column({ type: 'integer', nullable: true }) sampleCount!: number | null;
   @Column({ type: 'boolean', nullable: true }) scoreWithImage!: boolean | null;
   @Column({ type: 'integer', nullable: true }) timeoutMs!: number | null;
+  /** 最近一次视觉探测的结果；保存前必须为 true */
+  @Column({ type: 'boolean', default: false }) visionOk!: boolean;
+  @Column({ type: 'datetime', nullable: true }) visionCheckedAt!: Date | null;
+  @Column({ type: 'text', default: '' }) visionError!: string;
   @UpdateDateColumn() updatedAt!: Date;
   @Column({ type: 'integer', nullable: true }) updatedBy!: number | null;
   @Column({ type: 'varchar', default: '' }) updatedByName!: string;
@@ -253,5 +261,5 @@ export const ENTITIES = [
   Org,
   FeatureFlagOverride,
   FeatureFlagAudit,
-  ModelSetting,
+  ModelProfile,
 ];

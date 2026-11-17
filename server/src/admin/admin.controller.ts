@@ -5,7 +5,7 @@ import { IsBoolean, IsDateString, IsIn, IsInt, IsNumber, IsObject, IsOptional, I
 import { DataSource, In, Repository } from 'typeorm';
 import type { AdapterConfig } from '../adapters/adapter-config';
 import { APP_CONFIG, type AppConfig } from '../config';
-import { ModelSettingsService } from '../judge/model-settings.service';
+import { ModelProfilesService } from '../judge/model-profiles.service';
 import { AdaptersService } from '../adapters/adapters.service';
 import { toPublicUser } from '../auth/auth.service';
 import { BillingService } from '../billing/billing.service';
@@ -29,7 +29,7 @@ class StatsQuery {
 
 /** 控制台改模型配置；不传的字段保持原样，传空字符串表示退回环境变量 */
 class UpdateModelDto {
-  @IsOptional() @IsString() @MaxLength(100) name?: string;
+  @IsOptional() @IsString() @MaxLength(100) model?: string;
   @IsOptional() @IsString() @MaxLength(300) baseUrl?: string;
   @IsOptional() @IsString() @MaxLength(400) apiKey?: string;
   @IsOptional() @Type(() => Number) @IsNumber() @Min(0) @Max(2) temperature?: number;
@@ -97,7 +97,7 @@ class PresetDto {
 }
 
 class PresetPatchDto {
-  @IsOptional() @IsString() @MaxLength(100) name?: string;
+  @IsOptional() @IsString() @MaxLength(100) model?: string;
   @IsOptional() @IsString() @MaxLength(255) hostPattern?: string;
   @IsOptional() @IsString() @MaxLength(200) pathPattern?: string;
   @IsOptional() @IsObject() config?: AdapterConfig;
@@ -127,7 +127,7 @@ export class AdminController {
     private readonly adapters: AdaptersService,
     private readonly invites: InviteService,
     @Inject(APP_CONFIG) private readonly cfg: AppConfig,
-    private readonly modelSettings: ModelSettingsService,
+    private readonly modelProfiles: ModelProfilesService,
   ) {}
 
   /** orgId 给出时只统计该组织成员 */
@@ -183,13 +183,9 @@ export class AdminController {
 
   // ---------- 模型 ----------
 
-  /**
-   * 当前生效的模型配置：环境变量 + 控制台里的覆盖值。
-   * 密钥只报「有没有配」，不返回任何片段。
-   */
+  /** 所有模型方案 + 近 7 天各模型的评分量；密钥只报「有没有配」 */
   @Get('model')
   async modelInfo() {
-    const m = this.modelSettings.current();
     const since = new Date(Date.now() - 7 * 86400_000).toISOString().replace('T', ' ').slice(0, 19);
     const rows = await this.ds.query(
       `SELECT model,
@@ -201,31 +197,15 @@ export class AdminController {
       [since],
     );
     return {
-      name: m.name,
-      baseUrl: m.baseUrl,
-      /** 没配 key 时服务端用 mock 评分，分数是假的 */
-      apiKeyConfigured: m.apiKey.length > 0,
-      ready: m.apiKey.length > 0 && !!m.name && !!m.baseUrl,
-      params: {
-        timeoutMs: m.timeoutMs,
-        temperature: m.temperature,
-        maxTokens: m.maxTokens,
-        reasoningEffort: m.reasoningEffort || '(不传)',
-        maxRetries: m.maxRetries,
-        retryDelayMs: m.retryDelayMs,
-        scoreWithImage: m.scoreWithImage,
-        sampleCount: m.sampleCount,
+      profiles: this.modelProfiles.list(),
+      /** 这些参数只能在环境变量里改 */
+      fixed: {
+        maxRetries: this.cfg.model.maxRetries,
+        retryDelayMs: this.cfg.model.retryDelayMs,
         ocrTwoPass: this.cfg.ocr.twoPass,
         maxImageBytes: this.cfg.maxImageBytes,
       },
-      profiles: Object.entries(this.cfg.modelProfiles).map(([name, p]) => ({
-        name,
-        overrides: Object.keys(p).filter((k) => k !== 'apiKey'),
-      })),
       gold: { enabled: this.cfg.gold.enabled, maxExamples: this.cfg.gold.maxExamples },
-      /** 哪些字段是控制台覆盖的（其余来自环境变量） */
-      overrides: this.modelSettings.overrideKeys(),
-      updated: this.modelSettings.updated(),
       usage: rows.map((r: Record<string, unknown>) => ({
         model: String(r.model || '(未记录)'),
         total: Number(r.total),
@@ -236,27 +216,30 @@ export class AdminController {
     };
   }
 
-  /** 改模型配置，保存后立刻生效（不用重新部署） */
-  @Put('model')
-  async updateModel(@CurrentUser() u: AuthUser, @Body() dto: UpdateModelDto) {
-    if (dto.baseUrl !== undefined && dto.baseUrl !== '') {
-      let url: URL;
-      try {
-        url = new URL(dto.baseUrl);
-      } catch {
-        throw new BadRequestException('接口地址不是合法的 URL，例如 https://api.deepseek.com');
-      }
-      if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new BadRequestException('接口地址必须是 http(s)');
-    }
+  /** 新增或修改一个方案；保存前会真的发一张图探测，读不了图的模型直接拒绝 */
+  @Put('model/:name')
+  async saveModel(@CurrentUser() u: AuthUser, @Param('name') name: string, @Body() dto: UpdateModelDto) {
     const patch = Object.fromEntries(Object.entries(dto).filter(([, v]) => v !== undefined));
-    await this.modelSettings.update(patch, { id: u.id, name: u.username });
+    await this.modelProfiles.save(name, patch, { id: u.id, name: u.username });
     return this.modelInfo();
   }
 
-  /** 全部退回环境变量 */
-  @Delete('model')
-  async resetModel(@CurrentUser() u: AuthUser) {
-    await this.modelSettings.reset({ id: u.id, name: u.username });
+  /** 重新做一次视觉探测（改完供应商配置、或怀疑模型换了之后用） */
+  @Post('model/:name/test')
+  async testModel(@Param('name') name: string) {
+    return this.modelProfiles.test(name);
+  }
+
+  /** 恢复为环境变量：default 删掉覆盖行，其他方案只清字段 */
+  @Post('model/:name/reset')
+  async resetModel(@Param('name') name: string) {
+    await this.modelProfiles.reset(name);
+    return this.modelInfo();
+  }
+
+  @Delete('model/:name')
+  async deleteModel(@Param('name') name: string) {
+    await this.modelProfiles.remove(name);
     return this.modelInfo();
   }
 

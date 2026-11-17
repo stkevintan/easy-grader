@@ -9,6 +9,7 @@ import { loadConfig } from '../src/config';
 import { configureApp, isAllowedOrigin } from '../src/main';
 import { AuthService } from '../src/auth/auth.service';
 import { buildOcrPrompt, buildPrompt, extractJson, isBlankOcr, ModelOutputError, ModelService, parseVerdict, snapScore } from '../src/judge/model.service';
+import { VisionService } from '../src/judge/vision.service';
 import { pickGoldExamples } from '../src/judge/gold.service';
 import { hostMatches, normalizeHostPattern } from '../src/adapters/adapter-config';
 import { parseModelProfiles } from '../src/config';
@@ -43,7 +44,16 @@ describe('Easy Grader server (e2e)', () => {
     } as NodeJS.ProcessEnv);
     process.env.RATE_LIMIT_AUTH = '10000';
     process.env.RATE_LIMIT_JUDGE = '10000';
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string }) =>
+          m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
@@ -105,40 +115,56 @@ describe('Easy Grader server (e2e)', () => {
     await http.get('/api/admin/users').set(auth(userToken)).expect(403);
   });
 
-  it('管理端能看到当前模型配置，但不返回密钥内容', async () => {
+  it('管理端能看到当前模型方案，但不返回密钥内容', async () => {
     const r = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
+    const def = r.body.profiles.find((p: { name: string }) => p.name === 'default');
     // 测试环境没配 MODEL_API_KEY：应当明确报出来，而不是假装可用
-    expect(r.body).toMatchObject({ apiKeyConfigured: false, ready: false });
-    expect(r.body.params).toMatchObject({ sampleCount: 1, ocrTwoPass: true, scoreWithImage: true });
-    expect(Array.isArray(r.body.profiles)).toBe(true);
+    expect(def).toMatchObject({ apiKeyConfigured: false, ready: false });
+    expect(def.params).toMatchObject({ sampleCount: 1, scoreWithImage: true });
     expect(Array.isArray(r.body.usage)).toBe(true);
     expect(JSON.stringify(r.body)).not.toMatch(/apiKey"?\s*:\s*"/);
     await http.get('/api/admin/model').set(auth(userToken)).expect(403);
   });
 
-  it('管理端改模型配置立刻生效，密钥不回落，恢复后退回环境变量', async () => {
-    await http.put('/api/admin/model').set(auth(adminToken)).send({ name: 'ui-model', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key' }).expect(200);
+  it('模型方案保存前必须通过视觉探测，通过后立刻生效', async () => {
+    // 读不了图的模型直接拒绝
+    await http
+      .put('/api/admin/model/bad')
+      .set(auth(adminToken))
+      .send({ model: 'no-vision', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key' })
+      .expect(400);
+
+    // 能读图的方案可以保存，并出现在列表里
+    await http
+      .put('/api/admin/model/default')
+      .set(auth(adminToken))
+      .send({ model: 'ui-model', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key' })
+      .expect(200);
     let h = await http.get('/api/health').expect(200);
     expect(h.body.model).toBe('ui-model');
-    let m = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
-    expect(m.body.overrides).toEqual(expect.arrayContaining(['name', 'baseUrl', 'apiKey']));
-    expect(JSON.stringify(m.body)).not.toContain('sk-test-key');
 
-    // 只改一个字段，其余覆盖保持
-    await http.put('/api/admin/model').set(auth(adminToken)).send({ name: 'ui-model-2' }).expect(200);
+    const saved = await http
+      .put('/api/admin/model/fast')
+      .set(auth(adminToken))
+      .send({ model: 'ui-model-fast', baseUrl: 'https://example.com/v1', apiKey: 'sk-test-key', sampleCount: 3 })
+      .expect(200);
+    expect(saved.body.profiles.map((p: { name: string }) => p.name)).toEqual(expect.arrayContaining(['default', 'fast']));
+    const fast = saved.body.profiles.find((p: { name: string }) => p.name === 'fast');
+    expect(fast).toMatchObject({ model: 'ui-model-fast', vision: { ok: true } });
+    expect(fast.params.sampleCount).toBe(3);
+
+    // 只改一个字段，其余保留
+    await http.put('/api/admin/model/default').set(auth(adminToken)).send({ model: 'ui-model-2' }).expect(200);
     h = await http.get('/api/health').expect(200);
     expect(h.body.model).toBe('ui-model-2');
 
-    // 地址不合法直接拒绝，且不影响已有配置
-    await http.put('/api/admin/model').set(auth(adminToken)).send({ baseUrl: 'not a url' }).expect(400);
-    h = await http.get('/api/health').expect(200);
-    expect(h.body.model).toBe('ui-model-2');
+    // 地址不合法直接拒绝
+    await http.put('/api/admin/model/default').set(auth(adminToken)).send({ baseUrl: 'not a url' }).expect(400);
 
-    await http.delete('/api/admin/model').set(auth(adminToken)).expect(200);
+    await http.delete('/api/admin/model/fast').set(auth(adminToken)).expect(200);
+    await http.post('/api/admin/model/default/reset').set(auth(adminToken)).expect(201);
     h = await http.get('/api/health').expect(200);
     expect(h.body.model).toBe('mock');
-    m = await http.get('/api/admin/model').set(auth(adminToken)).expect(200);
-    expect(m.body.overrides).toEqual([]);
   });
 
   it('演示页适配预设已写入并可按 host+path 解析', async () => {
@@ -578,7 +604,16 @@ describe('OpenAI 兼容模型接入', () => {
       SCORE_WITH_IMAGE: 'false',
       MODEL_PROFILES: JSON.stringify({ cheap: { name: 'qwen-vl-cheap', sampleCount: 1 } }),
     } as NodeJS.ProcessEnv);
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string }) =>
+          m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
@@ -803,7 +838,16 @@ describe('功能开关', () => {
       DB_PATH: ':memory:', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: ADMIN.password, INITIAL_CREDITS: '5',
       RATE_LIMIT_DEFAULT: '10000', RATE_LIMIT_AUTH: '10000', RATE_LIMIT_JUDGE: '10000',
     } as NodeJS.ProcessEnv);
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string }) =>
+          m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
@@ -919,7 +963,16 @@ describe('限流', () => {
 
   it('登录接口超过 RATE_LIMIT_AUTH 返回 429，不影响 health', async () => {
     const cfg = loadConfig({ DB_PATH: ':memory:', ADMIN_USERNAME: 'admin', ADMIN_PASSWORD: 'admin-password-1', RATE_LIMIT_AUTH: '3' } as NodeJS.ProcessEnv);
-    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] }).compile();
+    const mod = await Test.createTestingModule({ imports: [AppModule.forRoot(cfg)] })
+      // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
+      .overrideProvider(VisionService)
+      .useValue({
+        probe: async (m: { name: string }) =>
+          m.name === 'no-vision'
+            ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
+            : { ok: true, error: '', latencyMs: 1 },
+      })
+      .compile();
     app = mod.createNestApplication({ logger: false });
     configureApp(app, cfg);
     await app.init();
