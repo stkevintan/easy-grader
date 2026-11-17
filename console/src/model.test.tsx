@@ -23,6 +23,7 @@ const profile = (over: Record<string, unknown> = {}) => ({
   vision: { ok: true, checkedAt: '2026-11-17T08:00:00.000Z', error: '' },
   updated: { at: '2026-11-17T08:00:00.000Z', byName: 'admin' },
   ready: true,
+  envBacked: false,
   ...over,
 });
 

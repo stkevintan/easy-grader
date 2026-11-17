@@ -142,6 +142,7 @@ export function AdminModelPage() {
         <div className="flex flex-col">
           <span className="font-mono text-xs">{p.name}</span>
           {p.name === 'default' && <Tag kind="brand">默认</Tag>}
+          {p.envBacked && <Tag>环境变量</Tag>}
         </div>
       ),
     },
@@ -174,7 +175,9 @@ export function AdminModelPage() {
           <LinkBtn onClick={() => setModal({ kind: 'edit', profile: p })}>编辑</LinkBtn>
           <LinkBtn onClick={() => test(p)}>{testing === p.name ? '探测中…' : '测试读图'}</LinkBtn>
           {p.overrides.length > 0 && <LinkBtn onClick={() => reset(p)}>恢复环境变量</LinkBtn>}
-          {p.name !== 'default' && <LinkBtn danger onClick={() => setModal({ kind: 'delete', profile: p })}>删除</LinkBtn>}
+          {p.name !== 'default' && !p.envBacked && (
+            <LinkBtn danger onClick={() => setModal({ kind: 'delete', profile: p })}>删除</LinkBtn>
+          )}
         </div>
       ),
     },

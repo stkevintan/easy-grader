@@ -233,6 +233,7 @@ export interface AdminModelProfile {
   vision: { ok: boolean; checkedAt: string | null; error: string };
   updated: { at: string | null; byName: string };
   ready: boolean;
+  envBacked: boolean;
 }
 
 export interface AdminModelInfo {

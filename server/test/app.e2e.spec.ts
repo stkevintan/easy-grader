@@ -844,6 +844,22 @@ describe('OpenAI 兼容模型接入', () => {
     ocrReply = '作者思念外婆';
   });
 
+  it('环境变量里的模型方案：测试读图能落库，但控制台删不掉', async () => {
+    const http = request(app.getHttpServer());
+    const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);
+    const ah = { authorization: `Bearer ${admin.body.token}` };
+
+    const tested = await http.post('/api/admin/model/cheap/test').set(ah).expect(201);
+    expect(tested.body).toMatchObject({ name: 'cheap', envBacked: true, vision: { ok: true } });
+
+    // 只在 MODEL_PROFILES 里定义的方案删不掉，只能改服务器 env
+    await http.delete('/api/admin/model/cheap').set(ah).expect(400);
+
+    const list = await http.get('/api/admin/model').set(ah).expect(200);
+    const cheap = list.body.profiles.find((p: { name: string }) => p.name === 'cheap');
+    expect(cheap).toMatchObject({ envBacked: true, vision: { ok: true } });
+  });
+
   it('功能开关 model_profile：按用户切换模型方案，评分记录记下方案名', async () => {
     const http = request(app.getHttpServer());
     const admin = await http.post('/api/auth/login').send(ADMIN).expect(200);

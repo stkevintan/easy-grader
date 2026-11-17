@@ -53,6 +53,8 @@ export interface ProfileView {
   vision: { ok: boolean; checkedAt: string | null; error: string };
   updated: { at: string | null; byName: string };
   ready: boolean;
+  /** 方案定义在服务器的 MODEL_PROFILES 里：控制台不能删除，只能恢复/覆盖 */
+  envBacked: boolean;
 }
 
 /**
@@ -139,6 +141,7 @@ export class ModelProfilesService implements OnModuleInit {
       vision: { ok: row?.visionOk ?? false, checkedAt: row?.visionCheckedAt?.toISOString() ?? null, error: row?.visionError ?? '' },
       updated: { at: row?.updatedAt?.toISOString() ?? null, byName: row?.updatedByName ?? '' },
       ready: Boolean(m.apiKey && m.baseUrl && m.name),
+      envBacked: name !== 'default' && Object.hasOwn(this.cfg.modelProfiles, name),
     };
   }
 
@@ -206,8 +209,12 @@ export class ModelProfilesService implements OnModuleInit {
     if (!this.has(name)) throw new NotFoundException('模型方案不存在');
     const probe = await this.vision.probe(this.config(name));
     // 探测期间别人可能改了这个方案：只把视觉结果写到当前这一行，别整行覆盖。
-    // 只在环境变量里定义的方案（含 default）还没有行，测试后把结果落库，下次打开页面能看到
-    const fresh = (await this.repo.findOneBy({ name })) ?? this.repo.create({ name });
+    // 只在环境变量里定义的方案（含 default）还没有行，测试后把结果落库，下次打开页面能看到；
+    // 只存在于数据库的方案如果在探测期间被删了，不能凭空重建（会丢掉它的全部覆盖配置）
+    const existing = await this.repo.findOneBy({ name });
+    const envBacked = name === 'default' || Object.hasOwn(this.cfg.modelProfiles, name);
+    if (!existing && !envBacked) throw new NotFoundException('模型方案在处理过程中被删除');
+    const fresh = existing ?? this.repo.create({ name });
     fresh.visionOk = probe.ok;
     fresh.visionError = probe.error;
     fresh.visionCheckedAt = new Date();
@@ -218,6 +225,9 @@ export class ModelProfilesService implements OnModuleInit {
 
   async remove(name: string): Promise<void> {
     if (name === 'default') throw new BadRequestException('默认模型不能删除，只能恢复为环境变量');
+    if (Object.hasOwn(this.cfg.modelProfiles, name)) {
+      throw new BadRequestException('这个方案定义在服务器的 MODEL_PROFILES 里，删除不了；要停用它请改服务器的 env，控制台只能覆盖或恢复它的参数');
+    }
     const row = this.rows.get(name);
     if (!row) throw new NotFoundException('模型方案不存在');
     await this.repo.remove(row);
