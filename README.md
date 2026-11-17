@@ -21,6 +21,7 @@
 - [API 参考](docs/api.md)：登录、任务、评分、记录、适配预设和管理接口
 - [实现说明](docs/implementation-notes.md)：整体设计、适配器契约和状态机
 - [通用控制台设计](docs/console-design.md)：新控制台的角色、组织和分阶段计划
+- [按得分要点阅卷设计](docs/point-grading.md)：每题固定的得分要点列表、AI 逐点评分、面板逐点打分和分期计划
 
 ## 快速开始
 
