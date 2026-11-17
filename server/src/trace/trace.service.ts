@@ -110,8 +110,9 @@ export class TraceService {
       await writeFile(join(this.cfg.traceDir, imageFile), Buffer.from(input.imageDataUrl.slice(input.imageDataUrl.indexOf(',') + 1), 'base64'));
 
       const profile = input.modelProfile ?? 'default';
-      const baseModel = this.profiles.config(profile);
-      const model = baseModel;
+      const fromProfile = this.profiles.config(profile);
+      // 评分开始时抓的快照优先：评分过程中管理员改了方案，trace 仍要记当时真正用的配置
+      const model = input.modelSnapshot ? { ...fromProfile, ...input.modelSnapshot } : fromProfile;
       const trace = {
         version: 2,
         promptVersion: input.promptVersion ?? null,
