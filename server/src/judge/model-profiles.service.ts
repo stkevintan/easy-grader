@@ -176,6 +176,15 @@ export class ModelProfilesService implements OnModuleInit {
     if (patch.scoreWithImage !== undefined) next.scoreWithImage = patch.scoreWithImage;
     if (patch.timeoutMs !== undefined) next.timeoutMs = patch.timeoutMs;
 
+    // 打分强度改了以后，转录强度要按同一套优先级重算（否则探测用的还是旧的继承值）
+    if (patch.ocrReasoningEffort === undefined) {
+      const explicitOcr =
+        ((existing?.ocrReasoningEffort as ModelConfig['ocrReasoningEffort'] | null) ?? undefined) ??
+        (name !== 'default' ? this.cfg.modelProfiles[name]?.ocrReasoningEffort : undefined) ??
+        this.cfg.model.ocrReasoningEffort;
+      next.ocrReasoningEffort = explicitOcr ?? next.reasoningEffort;
+    }
+
     if (patch.baseUrl !== undefined && next.baseUrl !== '') {
       let url: URL;
       try {

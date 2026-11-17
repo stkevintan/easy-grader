@@ -109,7 +109,13 @@ export function parseModelProfiles(raw: string | undefined): Record<string, Part
       if (k === 'timeoutMs' && !(Number.isInteger(x) && (x as number) >= 1000 && (x as number) <= 60_000)) throw new Error(`MODEL_PROFILES.${name}.timeoutMs 应为 1000–60000 的整数`);
       if (k === 'temperature' && !((x as number) >= 0 && (x as number) <= 2)) throw new Error(`MODEL_PROFILES.${name}.temperature 应在 0–2 之间`);
       if ((k === 'maxTokens' || k === 'sampleCount') && !(Number.isInteger(x) && (x as number) >= 1)) throw new Error(`MODEL_PROFILES.${name}.${k} 应为正整数`);
-      p[k] = k === 'baseUrl' && typeof x === 'string' ? x.replace(/\/+$/, '') : k === 'reasoningEffort' ? resolveReasoningEffort(String(x)) : x;
+      const normalizeEffort = (v: string) => (v.trim() === '' ? '' : resolveReasoningEffort(v));
+      p[k] =
+        k === 'baseUrl' && typeof x === 'string'
+          ? x.replace(/\/+$/, '')
+          : k === 'reasoningEffort' || k === 'ocrReasoningEffort'
+            ? normalizeEffort(String(x))
+            : x;
     }
     if (typeof p.sampleCount === 'number') p.sampleCount = Math.min(5, p.sampleCount);
     if (typeof p.maxTokens === 'number') p.maxTokens = Math.max(256, p.maxTokens);

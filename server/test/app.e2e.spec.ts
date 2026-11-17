@@ -24,6 +24,8 @@ function fakePng(seed: string): string {
 }
 
 const ADMIN = { username: 'admin', password: 'admin-password-1' };
+/** 视觉探测时实际拿到的模型配置（用于断言探测和评分配置一致） */
+const visionProbes: { name: string; ocr?: string }[] = [];
 
 describe('Easy Grader server (e2e)', () => {
   let app: INestApplication;
@@ -48,10 +50,12 @@ describe('Easy Grader server (e2e)', () => {
       // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
       .overrideProvider(VisionService)
       .useValue({
-        probe: async (m: { name: string }) =>
-          m.name === 'no-vision'
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
             ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
-            : { ok: true, error: '', latencyMs: 1 },
+            : { ok: true, error: '', latencyMs: 1 };
+        },
       })
       .compile();
     app = mod.createNestApplication({ logger: false });
@@ -181,8 +185,9 @@ describe('Easy Grader server (e2e)', () => {
       .expect(200);
     const slashFast = slash.body.profiles.find((p: { name: string }) => p.name === 'fast');
     expect(slashFast.baseUrl).toBe('https://example.com/v1');
-    // 没有单独设转录强度时，继承这个方案实际的打分强度
+    // 没有单独设转录强度时，继承这个方案实际的打分强度（探测时也必须是 none，不能还是旧的继承值）
     expect(slashFast.params.ocrReasoningEffort).toBe('none');
+    expect(visionProbes.at(-1)).toMatchObject({ name: 'ui-model-fast', ocr: 'none' });
     // 恢复一个非默认方案：model/baseUrl 是非空列，不能因为写 null 而 500
     const resetFast = await http.post('/api/admin/model/fast/reset').set(auth(adminToken)).expect(201);
     expect(resetFast.body.profiles.find((p: { name: string }) => p.name === 'fast')).toMatchObject({
@@ -664,10 +669,12 @@ describe('OpenAI 兼容模型接入', () => {
       // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
       .overrideProvider(VisionService)
       .useValue({
-        probe: async (m: { name: string }) =>
-          m.name === 'no-vision'
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
             ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
-            : { ok: true, error: '', latencyMs: 1 },
+            : { ok: true, error: '', latencyMs: 1 };
+        },
       })
       .compile();
     app = mod.createNestApplication({ logger: false });
@@ -914,10 +921,12 @@ describe('功能开关', () => {
       // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
       .overrideProvider(VisionService)
       .useValue({
-        probe: async (m: { name: string }) =>
-          m.name === 'no-vision'
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
             ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
-            : { ok: true, error: '', latencyMs: 1 },
+            : { ok: true, error: '', latencyMs: 1 };
+        },
       })
       .compile();
     app = mod.createNestApplication({ logger: false });
@@ -1039,10 +1048,12 @@ describe('限流', () => {
       // 视觉探测在测试里不真的打网络：名字里带 no-vision 的模型当作不支持读图
       .overrideProvider(VisionService)
       .useValue({
-        probe: async (m: { name: string }) =>
-          m.name === 'no-vision'
+        probe: async (m: { name: string; ocrReasoningEffort?: string }) => {
+          visionProbes.push({ name: m.name, ocr: m.ocrReasoningEffort });
+          return m.name === 'no-vision'
             ? { ok: false, error: 'image_url is not supported', latencyMs: 1 }
-            : { ok: true, error: '', latencyMs: 1 },
+            : { ok: true, error: '', latencyMs: 1 };
+        },
       })
       .compile();
     app = mod.createNestApplication({ logger: false });
@@ -1218,6 +1229,8 @@ describe('纯函数', () => {
   it('MODEL_PROFILES 支持 ocrReasoningEffort，非法值报错', () => {
     const p = parseModelProfiles('{"fast":{"name":"qwen-vl-max","ocrReasoningEffort":"none"}}');
     expect(p.fast).toMatchObject({ name: 'qwen-vl-max', ocrReasoningEffort: 'none' });
+    // off / default / disabled 表示不传该参数，解析时归一化成空字符串
+    expect(parseModelProfiles('{"fast":{"ocrReasoningEffort":"off"}}').fast.ocrReasoningEffort).toBe('');
     expect(() => parseModelProfiles('{"fast":{"ocrReasoningEffort":"bogus"}}')).toThrow(/ocrReasoningEffort/);
   });
 
